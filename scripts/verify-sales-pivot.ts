@@ -1,4 +1,4 @@
-// Verification for lib/sales-pivot.ts + lib/panel-scope.ts + lib/hubspot-import.ts —
+// Verification for lib/sales-pivot.ts + lib/panel-scope.ts —
 // the three pure modules that decide WHICH opportunities a panel is talking about
 // and what they add up to.
 // Run: pnpm verify:pivot
@@ -23,9 +23,10 @@ import {
 import { buildSalesSeries, OTROS_KEY } from "../lib/sales-series";
 import { monthKeyOf as createdMonthKeyOf, statusBucket } from "../lib/opportunity-breakdown";
 import { PANEL_SCOPES, resolvePipelineId, scopeOpportunities } from "../lib/panel-scope";
-import { applyHubspotFilter, hasHubspotId, isHubspotImport } from "../lib/hubspot-import";
 
-const SUCURSAL_FIELD = PANEL_SCOPES.vaeo.sucursalField; // "Sucursal VAEO"
+// El pivote recibe el nombre del campo por parámetro, así que la prueba elige
+// uno cualquiera: lo que se afirma es la agregación, no el nombre del campo.
+const SUCURSAL_FIELD = "Sucursal";
 
 let seq = 0;
 
@@ -48,7 +49,7 @@ function opp(o: {
   return {
     id: `o${++seq}`,
     name: `Opp ${seq}`,
-    pipelineId: o.pipelineId ?? PANEL_SCOPES.vaeo.pipelineId,
+    pipelineId: o.pipelineId ?? PANEL_SCOPES.canadas.pipelineId!,
     pipelineStageId: "stage-1",
     status: o.status ?? "won",
     createdAt: o.creado ?? "2026-01-01T00:00:00.000Z",
@@ -197,102 +198,28 @@ function main() {
   // 8. panel-scope: name match wins, id is the fallback, and scoping filters.
   {
     const pipelines: Pipeline[] = [
-      { id: "nuevo-id-vaeo", name: "VAEO", stages: ["Nuevo Lead", "Ganado"] },
-      { id: "nuevo-id-mesh", name: "MESH", stages: ["Nuevo Lead", "Ganado"] },
+      { id: "nuevo-id-canadas", name: "Cañadas", stages: ["00. Recibido", "08. Venta"] },
+      { id: "nuevo-id-atria", name: "Atria", stages: ["00. Recibido", "08. Venta"] },
     ];
-    assert.equal(resolvePipelineId(pipelines, "vaeo"), "nuevo-id-vaeo", "gana el match por nombre");
-    assert.equal(resolvePipelineId([], "vaeo"), PANEL_SCOPES.vaeo.pipelineId, "sin match, cae al id");
-    assert.equal(resolvePipelineId(undefined, "mesh"), PANEL_SCOPES.mesh.pipelineId, "sin pipelines, cae al id");
+    assert.equal(resolvePipelineId(pipelines, "canadas"), "nuevo-id-canadas", "gana el match por nombre");
+    assert.equal(resolvePipelineId([], "canadas"), PANEL_SCOPES.canadas.pipelineId, "sin match, cae al id");
+    assert.equal(resolvePipelineId(undefined, "atria"), PANEL_SCOPES.atria.pipelineId, "sin pipelines, cae al id");
+    // El match por nombre ignora acentos: la llave del panel es "canadas".
+    assert.equal(resolvePipelineId(pipelines, "canadas"), "nuevo-id-canadas", "\u00f1 y acentos no rompen el match");
 
     const mixed = [
-      opp({ value: 1, pipelineId: "nuevo-id-vaeo" }),
-      opp({ value: 1, pipelineId: "nuevo-id-mesh" }),
+      opp({ value: 1, pipelineId: "nuevo-id-canadas" }),
+      opp({ value: 1, pipelineId: "nuevo-id-atria" }),
     ];
-    assert.equal(scopeOpportunities(mixed, "vaeo", pipelines).length, 1, "solo el pipeline del panel");
-    assert.equal(scopeOpportunities(mixed, "mesh", pipelines).length, 1);
+    assert.equal(scopeOpportunities(mixed, "canadas", pipelines).length, 1, "solo el pipeline del panel");
+    assert.equal(scopeOpportunities(mixed, "atria", pipelines).length, 1);
+
+    // GENERAL no acota: devuelve el MISMO arreglo, sin copiar.
+    assert.equal(resolvePipelineId(pipelines, "general"), null, "GENERAL no tiene embudo");
+    assert.equal(scopeOpportunities(mixed, "general", pipelines), mixed, "GENERAL: misma referencia");
   }
 
-  // 9. hubspot-import: which opportunities the panel-wide toggle drops.
-  {
-    // The real migration date in this account. Every migrated record shares it.
-    const MIGRATED = "2026-03-20T00:00:00.000Z";
-
-    // A migrated opportunity: HubSpot id + created on the migration run.
-    const migrated = (fieldName: string, id: string, cierre?: string) => {
-      const o = opp({ value: 1, sucursal: "MTY Tanarah", cierre });
-      o.createdAt = MIGRATED;
-      o.customFieldsResolved = { ...o.customFieldsResolved, [fieldName]: id };
-      return o;
-    };
-
-    // --- signal 1: the id field, matched loosely by name ---
-    // Closed inside the migration month ⇒ HubSpot's own bookkeeping.
-    assert.equal(hasHubspotId(migrated("ID Oportunidad HS", "1")), true, "ID Oportunidad HS");
-    assert.equal(hasHubspotId(migrated("ID Hubspot", "1")), true, "ID Hubspot");
-    assert.equal(hasHubspotId(migrated("HubSpot ID", "1")), true, "HubSpot ID");
-
-    // An empty value is not an import — the field exists on every opp in some
-    // accounts, blank on the ones that were never migrated.
-    assert.equal(hasHubspotId(migrated("ID Oportunidad HS", "   ")), false, "campo vacío no cuenta");
-    assert.equal(hasHubspotId(opp({ value: 1 })), false, "sin el campo no cuenta");
-
-    // "Fecha de Creación import" is a different migration leftover: it says
-    // nothing about HubSpot and must not drag rows out of the panel.
-    assert.equal(
-      hasHubspotId(migrated("Fecha de Creación import", "2026-03-01")),
-      false,
-      "otro campo de importación no cuenta"
-    );
-    // Needs an id word too, so a bare "Sucursal HS" would not qualify.
-    assert.equal(hasHubspotId(migrated("Sucursal HS", "MTY")), false, "sin 'id' no cuenta");
-
-    // --- signal 2: closed inside the migration month, or later in the CRM ---
-    const imported = migrated("ID Oportunidad HS", "9", "2026-03-05T00:00:00.000Z");
-    assert.equal(isHubspotImport(imported), true, "cierre antes de migrar ⇒ importación");
-    assert.equal(
-      isHubspotImport(migrated("ID Oportunidad HS", "9", "2026-03-31T00:00:00.000Z")),
-      true,
-      "cierre a fin del mes de la migración ⇒ importación (los 7 casos de 21-31 mar)"
-    );
-    assert.equal(
-      isHubspotImport(migrated("ID Oportunidad HS", "9", "2026-04-01T00:00:00.000Z")),
-      false,
-      "cierre el mes siguiente ⇒ se trabajó en el CRM, cuenta como venta"
-    );
-    assert.equal(
-      isHubspotImport(migrated("ID Oportunidad HS", "9")),
-      true,
-      "migrada sin fecha de cierre ⇒ importación"
-    );
-    // An organic deal is never an import, whatever its dates.
-    const organic = opp({ value: 1, sucursal: "MTY Tanarah", cierre: "2026-03-05T00:00:00.000Z" });
-    assert.equal(isHubspotImport(organic), false, "sin ID de HubSpot nunca es importación");
-
-    const both = [imported, organic];
-    assert.equal(applyHubspotFilter(both, false).length, 1, "apagado: se va la importada");
-    assert.equal(applyHubspotFilter(both, false)[0].id, organic.id, "apagado: queda la orgánica");
-    assert.equal(applyHubspotFilter(both, true), both, "prendido: misma referencia, sin copia");
-
-    // The toggle must move the pivot's money, not just its row count — and the
-    // deal migrated open then won in the CRM must survive it.
-    const bulk = migrated("ID Oportunidad HS", "9", "2026-03-05T00:00:00.000Z");
-    bulk.value = 1000;
-    const workedHere = migrated("ID Oportunidad HS", "10", "2026-06-05T00:00:00.000Z");
-    workedHere.value = 500;
-    const native = opp({
-      value: 25,
-      sucursal: "MTY Tanarah",
-      servicio: "Coworking",
-      cierre: "2026-06-05T00:00:00.000Z",
-    });
-    const set = [bulk, workedHere, native];
-    const on = buildSalesPivot(applyHubspotFilter(set, true), { sucursalField: SUCURSAL_FIELD });
-    const off = buildSalesPivot(applyHubspotFilter(set, false), { sucursalField: SUCURSAL_FIELD });
-    assert.equal(on.grandTotal, 1525, "prendido suma las tres");
-    assert.equal(off.grandTotal, 525, "apagado suma la orgánica y la migrada-pero-cerrada-aquí");
-  }
-
-  // 10. sales-series: cuadre exacto con el pivote sobre el mismo input.
+  // 9. sales-series: cuadre exacto con el pivote sobre el mismo input.
   // Es LA aserción del módulo: los dos charts y la tabla viven en la misma
   // pantalla, así que una discrepancia es visible y vergonzosa.
   {
@@ -322,7 +249,7 @@ function main() {
     }
   }
 
-  // 11. sales-series: orden, cubetas y drill.
+  // 10. sales-series: orden, cubetas y drill.
   {
     const opps = [
       opp({ value: 10, cierre: "2026-05-02T00:00:00.000Z", sucursal: "MTY Tanarah" }),
@@ -357,7 +284,7 @@ function main() {
     assert.equal(abr.oppIds["QRO Central Park"].length, 1, "el drill trae los ids de la celda");
   }
 
-  // 12. sales-series: la cola se pliega en "Otros" cuando hay más de maxNamed.
+  // 11. sales-series: la cola se pliega en "Otros" cuando hay más de maxNamed.
   {
     const mk = (servicio: string, value: number) =>
       opp({ value, cierre: "2026-04-02T00:00:00.000Z", servicio });
@@ -382,7 +309,7 @@ function main() {
     assert.equal(d.grandTotal, 490, "plegar no cambia el total");
   }
 
-  // 13. sales-series: namedKeys congela qué series existen. Sin esto, filtrar
+  // 12. sales-series: namedKeys congela qué series existen. Sin esto, filtrar
   // por fecha puede "despiegar" una serie que en el total vive dentro de Otros,
   // y el chart repinta colores al mover el filtro.
   {
@@ -401,7 +328,7 @@ function main() {
     assert.equal(d.series[0].total, 90, "Otros suma las dos");
   }
 
-  // 14. sales-series: no se pliega una sola sobrante — "Otros (1)" es absurdo.
+  // 13. sales-series: no se pliega una sola sobrante — "Otros (1)" es absurdo.
   {
     const mk = (servicio: string, value: number) =>
       opp({ value, cierre: "2026-04-02T00:00:00.000Z", servicio });
@@ -426,7 +353,7 @@ function main() {
   // que dicen recortar.
   // ---------------------------------------------------------------------------
 
-  // 15. Los defaults siguen siendo ganadas × Fecha de Cierre × valor. Una
+  // 14. Los defaults siguen siendo ganadas × Fecha de Cierre × valor. Una
   // perdida con valor no puede colarse al agregado de ventas.
   {
     const mixto = [
@@ -446,7 +373,7 @@ function main() {
     assert.equal(d.grandTotal, 100, "sin opciones solo cuentan las ganadas, y en dinero");
   }
 
-  // 16. include + measure: "count" — el universo espejo, contado por cabezas.
+  // 15. include + measure: "count" — el universo espejo, contado por cabezas.
   // El valor monetario deja de importar: una perdida en $0 pesa igual que una
   // en $99,000, que es justo lo que quiere decir "cuántos leads".
   {
@@ -468,7 +395,7 @@ function main() {
     assert.equal(d.series[0].total, 2, "las dos perdidas caen en la misma serie");
   }
 
-  // 17. "No ganadas" incluye las abiertas. Ojo con la etapa: isWonOpp() decide
+  // 16. "No ganadas" incluye las abiertas. Ojo con la etapa: isWonOpp() decide
   // por NOMBRE de etapa, así que una abierta parada en "Ganado" sí es una venta
   // y no debe entrar aquí.
   {
@@ -487,7 +414,7 @@ function main() {
     assert.equal(d.grandTotal, 2, "abierta + perdida; la parada en Ganado es una venta");
   }
 
-  // 18. monthOf manda sobre el bucket, y se lee EN HORA LOCAL. No se asevera un
+  // 17. monthOf manda sobre el bucket, y se lee EN HORA LOCAL. No se asevera un
   // mes literal —el script corre en la zona que sea— sino que el bucket es
   // exactamente el que da el lector de opportunity-breakdown, que es el mismo
   // que usa "Oportunidades por estado". Si las dos gráficas leyeran el mes
@@ -512,7 +439,7 @@ function main() {
     );
   }
 
-  // 19. monthOf que devuelve null cae en la cubeta sin fecha en vez de perderse.
+  // 18. monthOf que devuelve null cae en la cubeta sin fecha en vez de perderse.
   {
     const d = buildSalesSeries(
       [opp({ value: 0, servicio: "Coworking", status: "lost", stage: "Perdido" })],
@@ -528,7 +455,7 @@ function main() {
     assert.equal(d.grandTotal, 1, "y sigue contando");
   }
 
-  // 20. La cubeta vacía se rotula con emptyLabel y va SIEMPRE al final de las
+  // 19. La cubeta vacía se rotula con emptyLabel y va SIEMPRE al final de las
   // series, aunque sea la mayor. Es el caso real de esta gráfica: "Servicio" no
   // se captura en los leads que se pierden, así que "Sin servicio" domina y
   // aun así no puede robarle el primer lugar del apilado a un servicio real.

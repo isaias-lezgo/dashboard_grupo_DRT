@@ -232,12 +232,12 @@ function main() {
   //     hardcodeado solo de respaldo — misma regla que resolvePipelineId().
   {
     const pipelines: Pipeline[] = [
-      { id: "otro-id-cualquiera", name: "VAEO", stages: STAGES },
-      { id: "DkZiRWdizgMRt7osjuRb", name: "MESH", stages: ["Nuevo Lead", "Ganado"] },
+      { id: "otro-id-cualquiera", name: "Ca\u00f1adas", stages: STAGES },
+      { id: "1f8VurvKrPgbwYrmBo2m", name: "Atria", stages: ["00. Recibido", "08. Venta"] },
     ];
-    assert.deepEqual(panelStageOrder(pipelines, "vaeo"), STAGES, "gana el match por nombre");
-    assert.deepEqual(panelStageOrder(pipelines, "mesh"), ["Nuevo Lead", "Ganado"]);
-    assert.deepEqual(panelStageOrder(undefined, "vaeo"), [], "sin embudos, las columnas salen de los datos");
+    assert.deepEqual(panelStageOrder(pipelines, "canadas"), STAGES, "gana el match por nombre");
+    assert.deepEqual(panelStageOrder(pipelines, "atria"), ["00. Recibido", "08. Venta"]);
+    assert.deepEqual(panelStageOrder(undefined, "canadas"), [], "sin embudos, las columnas salen de los datos");
   }
 
   // 11. Conjunto vacío.

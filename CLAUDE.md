@@ -2,43 +2,60 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## The client: Grupo VAEO
+## The client: Grupo DRT
 
 This repo is a **single-client fork** of a shared multi-client GHL panel
-(`upstream` → `dashboards-GHL`), built to serve **one customer: Grupo VAEO**. Custom
-panels are being built for their **two business lines**, which is what the two dashboard
-tabs are — not "Marketing" and "Ventas" as in the shared panel.
+(`upstream` → `dashboards-GHL`), built to serve **one customer: Grupo DRT**.
 
-**VAEO Business Club** (`vaeo.mx`) — flexible-workspace operator in Mexico, founded/led by
-Jorge Pizzuto Aznar, ~22 employees, HQ Querétaro. Its pitch is *"Workspitality"* —
-hospitality applied to workspace — and *"Tu espacio de trabajo, como te gusta"*. Four
-product lines:
+**Grupo DRT** (`drt.com.mx`) — a **real-estate developer** based in Querétaro
+(Prol. Cipreses 100, Jurica; `America/Mexico_City`). GHL sub-account
+`LbjglJfbiUWjKpmxSnvm`, contact `mkt@drt.com.mx`.
 
-| Line | What it is |
-|---|---|
-| Oficinas virtuales | Fiscal address, package reception, personalized phone answering, IP telephony (3CX), concierge |
-| Coworking | Shared flexible desks, community/networking events |
-| Oficinas equipadas | Private furnished offices — *"más que oficinas, lugares llenos de experiencias"* |
-| Salas de juntas | Meeting rooms, in-person and remote |
+It sells **housing and lots** — a long, high-consideration cycle. Not a one-off purchase
+and not a subscription, so the funnel that matters is
+**lead → contacto → cita → visita al desarrollo → apartado → venta**. "Apartado" (the
+deposit) is the hinge: it is the first real commitment, and almost everyone who reaches it
+closes. When proposing charts, the Visita → Apartado step says more than any other.
 
-Locations: **Monterrey (×2), Querétaro, San Luis Potosí**. Memberships are customizable,
-and meeting-room hours transfer between branches — so a lead's *location* matters as much
-as their product interest.
+**Six developments, and each one IS a CRM pipeline.** Measured 2026-08-24:
 
-**MESH** (`meshcoworking.com`) — the group's **coworking brand**, launched in Monterrey ~5
-minutes from San Pedro Garza García, near Hospital San José. Offers private offices,
-coworking floor, and meeting rooms. Positioned at entrepreneurs and companies wanting
-*"flexibilidad, comodidad y un ambiente inspirador para crecer"*.
+| Desarrollo | Pipeline id | Oportunidades |
+|---|---|---|
+| Cañadas | `ChCZUhFDe5m0RSNp4qbb` | 4,490 |
+| La Sierra | `gRHIvjxjQ2vvHSXQjfC2` | 1,979 |
+| Atria | `0HGe4sGXe7v6Keo2Fk7v` | 1,968 |
+| Saggita | `5FZvtr1HjvpLDXjcHxfx` | 1,872 |
+| Palmyra | `jNQOWHy6JLW5Mbb18l7t` | **0** |
+| Zanda | `1f8VurvKrPgbwYrmBo2m` | **0** |
 
-**Audience for both panels**: entrepreneurs/freelancers, PYMEs, and corporate clients.
-Sales are **membership/lease subscriptions**, not one-off purchases — so retention,
-occupancy and lead-to-tour-to-contract flow matter more than the single-purchase funnel
-the shared panel was designed around. Keep that in mind when proposing charts.
+Palmyra and Zanda are real pipelines that have not launched. They get their own tabs and
+render honest empty states — do **not** hide them.
+
+**The shape of this account, and what it implies for charts.** All figures measured
+2026-08-24 against production; re-measure before trusting them, but the orders of
+magnitude are the point:
+
+- **10,309 oportunidades · 11,906 contactos · 34 usuarios** (~24 of them advisors who
+  actually carry opportunities).
+- **The funnel is high-volume and low-conversion, and that is normal here**: 2,923 open,
+  7,303 lost, 55 `status: "won"`, 28 abandoned. **Never report ~0.5% conversion as an
+  anomaly or a performance problem without that context.**
+- **~17% of opportunities have no `assignedTo`.** That is the single biggest leak in the
+  funnel and the reason `assignment-funnel-chart.tsx` earns its place here.
+- **Almost every lead comes from pauta**: ~99.7% of opportunities carry the `Pauta` custom
+  field, ~86% carry `URL Pauta` and `ID de Pauta`, and ~85% of `source` is
+  "Pauta WhatsApp" / "Pauta Formulario" / "Pauta". "Where do leads come from?" is nearly
+  always a question about **which campaign**, not which generic channel.
+- **The closing fields are barely captured**, which is why the money charts were removed
+  (see "Charts deliberately absent" below): `Fecha de Cierre` is populated on ~5% of won
+  opportunities, `Unidad` / `Forma de pago` / `Objetivo real` on <4%. Money lives on the
+  **native `monetaryValue`** instead — 21 of 55 won opportunities carry one, totalling
+  ~$77M.
 
 **Multi-tenancy is no longer a design concern here.** The roster code (`lib/clients.ts`,
 password-as-identity, per-location limiter keying) still exists and still works — leave it
 alone unless asked — but do **not** weigh new work against cross-client generality, and
-don't preserve per-account portability when it complicates a chart. Hardcoding VAEO's
+don't preserve per-account portability when it complicates a chart. Hardcoding DRT's
 actual pipeline names, stages and custom fields is fine and preferred here.
 
 ## Commands
@@ -60,13 +77,13 @@ pnpm verify:auth         # lib/auth.ts      — session token; incl. the cookie-
 pnpm verify:limiter      # lib/ghl-limiter.ts — per-location isolation
 pnpm verify:attachments  # lib/attachments.ts + lib/attachment-tools.ts — tabular parse/query/join
 pnpm verify:paged        # lib/paged-fetch.ts — resiliencia del abanico de páginas
-pnpm verify:pivot        # lib/sales-pivot.ts + lib/panel-scope.ts + lib/hubspot-import.ts
+pnpm verify:pivot        # lib/sales-pivot.ts + lib/sales-series.ts + lib/panel-scope.ts
 pnpm verify:breakdown    # lib/opportunity-breakdown.ts — cubetas de estado + normalización de categorías
 pnpm verify:lost-matrix  # lib/lost-reason-matrix.ts — cruce motivo de perdido × categoría
 pnpm verify:lost-cross   # lib/lost-cross-matrix.ts — cruce perdidas servicio/origen/canal
 pnpm verify:advisors     # lib/advisor-breakdown.ts — matriz asesor × etapa + cubetas de estatus
 pnpm verify:assignment   # lib/assignment-funnel.ts — universo sin-asesor vs. denominador del mes
-pnpm verify:filters      # lib/panel-filters.ts — filtros globales de sucursal y asesor
+pnpm verify:filters      # lib/panel-filters.ts — filtros globales de desarrollo y asesor
 pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/canal SIN agrupar grafías
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
 pnpm verify:stale-matrix # lib/stale-opportunity-matrix.ts — cubetas de abandono en ambos ejes
@@ -146,95 +163,128 @@ All are server-side only. `DASHBOARD_CLIENTS` is read in `lib/clients.ts`;
 
 ## Architecture
 
-This is a single-page Next.js 16 (App Router) dashboard that surfaces GoHighLevel CRM data in three tabs: **VAEO**, **MESH**, and **Asistente IA**. The multi-tenant machinery from the shared panel is still in place (a client's password resolves to their own GHL sub-account — see "Multi-client" below), but this deployment serves Grupo VAEO only.
+This is a single-page Next.js 16 (App Router) dashboard that surfaces GoHighLevel CRM data in eight tabs: **GENERAL**, one per desarrollo (**Atria**, **Cañadas**, **La Sierra**, **Palmyra**, **Saggita**, **Zanda**), and **Asistente IA**. The multi-tenant machinery from the shared panel is still in place (a client's password resolves to their own GHL sub-account — see "Multi-client" below), but this deployment serves Grupo DRT only.
 
-### Panel scope: the pipeline IS the business line
+### Panel scope: the pipeline IS the desarrollo
 
-**The two panels are the same charts over two different pipelines.** Every chart in the
-VAEO tab counts only contacts whose opportunity lives in the **VAEO** pipeline; every
-chart in the MESH tab counts only contacts whose opportunity lives in the **MESH**
-pipeline. Nothing else distinguishes the tabs — build a chart once, and it should render
-in either panel with only the pipeline scope changing.
+**Every panel is the same charts over a different pipeline.** A chart is built once and
+renders in any tab with only the pipeline scope changing — that is why there is exactly
+**one** `components/dashboard/panel-dashboard.tsx` taking a `panel: PanelId` prop, and not
+one component per tab. (It used to be two twin files, `vaeo-dashboard` / `mesh-dashboard`,
+that differed only in a string literal. With seven scopes that stopped being tenable; if
+you find yourself copying it again, parameterize instead.)
 
-Both pipelines live in the **same** GHL sub-account (`uDQiMzx1Iclb6gbJNRDY`, "Grupo VAEO"),
-so the main sync fetches them together and the split is client-side:
+All six pipelines live in the **same** GHL sub-account (`LbjglJfbiUWjKpmxSnvm`, "Grupo
+DRT"), so the main sync fetches them together and the split is client-side. The stage
+names are **identical across all six**:
 
-| Pipeline | id | Stages |
-|---|---|---|
-| VAEO | `MiATYfkJWklaXqYc7hOr` | Nuevo Lead → Lead en proceso → Lead Perfilado → Propuesta → Negociación → Ganado → Perdido → Cliente Futuro |
-| MESH | `DkZiRWdizgMRt7osjuRb` | Nuevo Lead → Lead en proceso → Lead perfilado → Propuesta → Negociación → Ganado → Perdido → Cliente Futuro |
+```
+00. Recibido → 01. Contactado → 02. Lead en Seguimiento → 03. Lead Calificado
+→ 04. Cita Programada → 05. Visita al Desarrollo → 06. Negociación
+→ 07. Apartado → 08. Venta
+```
 
-The stage names are identical across the two (modulo the lowercase `perfilado` in MESH),
-which is what makes one chart implementation serve both. Match stages **by name**,
-case-insensitively — never by stage id — the same rule `isWonOpp()` already follows.
+plus two side buckets: **Inversión Futura** and **Negocio perdido** (spelled
+`Negocio Perdido` in La Sierra, Palmyra and Zanda — hence the rule below).
+
+Match stages **by name, case-insensitively** — never by stage id — the same rule
+`isWonOpp()` already follows.
+
+Two stages sit at **zero** in every pipeline today (`03. Lead Calificado`,
+`06. Negociación`). They are not dead code to delete: they are stages the operation
+skips, and a funnel chart that shows them empty is telling the client something true.
+
+**GENERAL is deliberately "all opportunities", not "the six desarrollos we know about."**
+When DRT opens a seventh development, its leads reach GENERAL and the desarrollo filter
+the same day, with no code change; only its own tab has to be added to `PANEL_SCOPES`.
+`scopeOpportunities(opps, "general")` returns the **same array reference**, not a copy, so
+the tab that handles the most data doesn't churn every memo downstream.
 
 Consequences to keep in mind when building charts:
 
 - **The opportunity is the entry point, not the contact.** A contact has no pipeline of
   their own; they belong to a panel because one of their opportunities does. Scope by
   filtering opportunities on `pipelineId`, then resolve contacts from that set.
-- A contact with opportunities in *both* pipelines legitimately appears in *both* panels.
-  That is not double-counting to fix — they are a lead for both business lines.
-- A contact with **no** opportunity belongs to no pipeline, so it can't be scoped to either
-  business line — but it is **never silently dropped**. Those contacts are leads that
+- A contact with opportunities in *several* pipelines legitimately appears in *several*
+  panels. That is not double-counting to fix — they are comparing developments.
+- A contact with **no** opportunity belongs to no pipeline, so it can't be scoped to any
+  desarrollo — but it is **never silently dropped**. Those contacts are leads that
   nobody has moved into an embudo yet, which is exactly the leak worth watching. Surface
   them in a **card at the top of the panel** ("Contactos sin oportunidad" — count +
   drill-down to the list), above the pipeline-scoped charts, and keep them **out** of the
-  chart aggregates so the funnel numbers stay honest. Show the same card in both panels;
-  there is no data to attribute them to one line over the other.
+  chart aggregates so the funnel numbers stay honest.
 - The pipeline scope is applied **before** the date filter conceptually, but both are just
   filters over the same arrays; order doesn't matter as long as drill-downs still join
   against the unfiltered `all*` sets (see "Drill-downs" below).
 
-`app/page.tsx` passes the **full** opportunity/contact sets to both dashboards; each chart
+`app/page.tsx` passes the **full** opportunity/contact sets to the dashboard; each chart
 applies the scope itself through **`lib/panel-scope.ts`** (`scopeOpportunities(opps, panel,
-pipelines)`), which is the single definition shared by both panels. `PANEL_SCOPES` also
-carries the per-panel **sucursal custom field** (`Sucursal VAEO` vs `Sucursal MESH`), since
-that differs between the two lines as well. `resolvePipelineId()` matches the pipeline by
-**name** and falls back to the hardcoded id.
+pipelines)`), the single definition every panel shares. `resolvePipelineId()` matches the
+pipeline by **name** (accent- and case-insensitively, so the `canadas` key finds
+"Cañadas") and falls back to the hardcoded id; it returns `null` for GENERAL.
+
+**There is no sucursal custom field in this account.** The geographic/commercial dimension
+is the **desarrollo**, and the desarrollo is read from the **pipeline** — which is why
+`desarrolloOf(opp, pipelines)` takes the pipeline list instead of a field name. Do not
+reintroduce a `sucursalField`-style seam here.
 
 ### Current state
 
-- Both panels now render charts; `PanelPlaceholder` is no longer used by either. **Shared by both** (identical code, only `panel` differs): `opportunity-status-chart.tsx`, `opportunity-win-rate-chart.tsx`, `lost-reason-matrix.tsx` (tabla "Motivos de perdido": motivo × categoría, con un switch propio entre Canal de Contacto y Origen de Lead — el switch es estado local de la tarjeta, no un filtro global), `lost-cross-matrix.tsx` (tabla "Perdidas por servicio, origen y canal": las mismas perdidas cruzadas sobre **dos de tres** dimensiones, con un switch por eje; elegir en un eje la dimensión del otro **transpone** la tabla en vez de mandar al otro eje a una tercera. `Servicio` solo se captura al CERRAR la venta — medido el 2026-08-17: ~5% de poblado en las perdidas de VAEO contra ~99% de origen y canal — así que la fila "Sin servicio" se lleva ~90% y la tarjeta lo dice con una nota calculada bajo la tabla; **no "arregles" eso escondiendo la cubeta**, el hueco de captura ES el hallazgo), `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": el universo son **exclusivamente** las oportunidades sin `assignedTo`, apiladas por mes de creación y partidas por estatus. Las asignadas no se dibujan —para eso están "Oportunidades por estado" y la tabla por asesor— pero sí entran en `monthTotal`, el denominador del "% del mes" que va en el tooltip y en la nota al pie: sin él, "624 huérfanos" pierde la escala que le da sentido. La leyenda lista solo las cubetas con registros (`activeBuckets`), así que hoy salen Abiertas y Perdidas y **no** una serie "Ganadas" clavada en cero — medido el 2026-08-23: de 2 298 sin asesor en VAEO, 0 ganadas, 2 091 perdidas y 207 abiertas, y **todas** están o en "Nuevo Lead" o en "Perdido", nunca en una etapa intermedia. En MESH son 13 de 534, que es lo que prueba que la fuga es del embudo VAEO y no de la operación del grupo), `advisor-stage-table.tsx` (tabla "Oportunidades por asesor": asesor × etapa, con una barra apilada de estatus por fila; el sombreado se normaliza **por columna** y la fila "Sin asesor" queda fuera de esa normalización y del tinte, porque es un orden de magnitud mayor), `stale-opportunity-matrix.tsx` ("Oportunidades sin atención": días sin cambio de etapa × días sin mensaje saliente, sobre las abiertas del embudo vivo — sin Ganado, Perdido ni Cliente Futuro), `task-backlog-chart.tsx` ("Tareas pendientes por asesor", barras apiladas por vencimiento), and two mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`, both exported from that file with their tooltip copy), and two mounts of `sales-by-dimension-chart.tsx` (ventas apiladas por mes de cierre, cortadas por sucursal y por servicio — calcan los dos charts de Looker Studio que el cliente ya usa), y `sales-pivot-table.tsx` ("Resumen general de ventas", encabeza los dos paneles) — sus totales y los de las barras salen del mismo agregado y `pnpm verify:pivot` asegura que cuadran. En su cabecera la jerarquía está invertida a propósito: sucursal y servicio llevan el peso (banda `bg-muted`, `text-sm`/`text-[13px]`) y las celdas de importe van en `text-muted-foreground`; solo subtotales, la columna Total y la fila de totales recuperan el color pleno. **Their prop surface is intentionally identical and fully wired** — `app/page.tsx` already feeds both the date-filtered slices and the unfiltered `all*` lookup sets, so a new chart drops in with no plumbing. Keep the two prop lists in sync so a chart can move between panels unchanged — the only thing that should differ between the two panels is the pipeline scope (see above). Each panel builds one `shared` object and spreads it into every per-opportunity chart; keep that pattern rather than re-listing props per chart.
-- **`lost-by-dimension-chart.tsx` ("Leads no ganados por servicio") es el espejo de
-  `sales-by-dimension-chart.tsx`**, montado justo debajo de él en los dos paneles, y las
-  tres diferencias son deliberadas: (1) el eje X es el mes de **creación** —cuándo nos
-  buscaron— porque una perdida nunca tiene Fecha de Cierre, y se lee con el `monthKeyOf`
-  **local** de `opportunity-breakdown` para que ponga cada lead en el mismo mes que
-  "Oportunidades por estado"; (2) mide **conteo**, no pesos; (3) lleva un switch local
-  **Perdidas ⇄ No ganadas** (esta última suma las abiertas, así que los meses recientes se
-  ven altos con razón: esos leads siguen vivos). Los colores y el plegado en "Otros" se
-  congelan sobre el universo MÁS amplio y sin filtrar, para que ni el filtro de fechas ni
-  los controles repinten las series.
-  - **Aquí la cubeta "Sin servicio" es un TOGGLE y arranca APAGADA** — y esa es la
-    diferencia con la regla de `lost-cross-matrix.tsx`, no un olvido. `Servicio` se captura
-    al **perfilar** el lead (medido el 2026-08-23: 0/32 en Nuevo Lead, 1/49 en Lead en
-    proceso, 12/13 en Lead Perfilado, 100/100 en ganadas, 1/100 en perdidas) y los leads
-    que se caen mueren antes de llegar ahí, así que esa cubeta se lleva ~87% de las no
-    ganadas de VAEO y ~74% de las de MESH. En una **tabla** una fila del 89% se lee sin
-    estorbar; en un **apilado** se come la gráfica entera y deja los productos reales en
-    franjas de un pixel. Apagada, el dato no se esconde: cambia de lugar a la nota al pie,
-    en números absolutos. **No la vuelvas a meter al apilado por default.**
-  - Con el toggle apagado, el total del encabezado y la etiqueta de cada barra cuentan
-    **solo lo dibujado**. Las cuentas de la nota, en cambio, salen del universo completo y
-    **no** de `data` — el número que el cliente tiene que ir a corregir en GHL no puede
-    depender de cómo esté puesta la vista.
-  - El estado vacío distingue sus dos causas: "no hubo leads" y "ninguno trae el campo
-    capturado" se ven igual (cero barras) y decir lo primero cuando pasa lo segundo sería
-    falso — probable, además, en un periodo corto.
-- **`ChartContainer` (`components/ui/chart.tsx`) already wraps its child in a Recharts `ResponsiveContainer`.** Do not nest another one inside it — the chart still renders, but Recharts logs "width and height are both fixed numbers" on every resize. Charts recovered from git history predate this and do nest one; drop it when you port them.
-- Both panels also take **`dateRange`** (the resolved `ResolvedDateRange | null` from `app/page.tsx`). It exists for charts that measure a date *other than* `createdAt`: the pivot table filters `allOpportunities` by **Fecha de Cierre** itself, because the pre-filtered `opportunities` prop is cut by creation date and would silently drop an opportunity created outside the window but closed inside it.
+- **Every tab renders the same chart set**, from the single `panel-dashboard.tsx`, which
+  builds one `shared` object and spreads it into every per-opportunity chart. Keep that
+  pattern rather than re-listing props per chart. The mounted charts:
+  `opportunity-status-chart.tsx`, `opportunity-win-rate-chart.tsx`,
+  `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
+  **exclusively** the opportunities with no `assignedTo`, stacked by creation month and
+  split by status. The assigned ones aren't drawn — "Oportunidades por estado" and the
+  advisor table cover those — but they DO count toward `monthTotal`, the denominator of
+  the "% del mes" in the tooltip and footnote: without it a raw orphan count loses the
+  scale that makes it mean anything. The legend lists only buckets with records
+  (`activeBuckets`), so a "Ganadas" series pinned at zero never appears. **~17% of DRT's
+  opportunities are orphaned, so this card is the headline finding, not a footnote**),
+  `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
+  normalized **per column** and the "Sin asesor" row stays outside that normalization and
+  outside the tint, because it is an order of magnitude larger),
+  `stale-opportunity-matrix.tsx` ("Oportunidades sin atención": days without a stage change
+  × days without an outbound message, over the open opportunities of the live funnel),
+  `task-backlog-chart.tsx` ("Tareas pendientes por asesor", stacked by due date), two
+  mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`),
+  `lost-reason-matrix.tsx` ("Motivos de perdido": motivo × categoría, with its own local
+  switch between Canal de Contacto and Origen de Lead — that switch is card-local state,
+  not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
+  over **two of three** dimensions, with a per-axis switch; choosing the other axis's
+  dimension **transposes** the table instead of forcing a third onto the other axis).
+- **`lost-cross-matrix.tsx` still offers a `Servicio` axis, and DRT has no such field.**
+  Its `LOST_DIMENSIONS.servicio` reads `SERVICIO_FIELD` ("Servicio") from `lib/sales-pivot.ts`,
+  which was VAEO's vocabulary — here it will resolve to an all-"Sin servicio" column. The
+  DRT-correct third dimension is almost certainly **desarrollo** (from the pipeline) or
+  `Tipo de vivienda`; pick one, measure its capture rate first, and rewire that entry.
+  Origen × Canal — the other two axes — work today.
+- **Charts deliberately absent, and why.** `sales-pivot-table.tsx`,
+  `sales-by-dimension-chart.tsx` and `lost-by-dimension-chart.tsx` were **removed** in the
+  DRT fork. All three key off `Fecha de Cierre` × sucursal × servicio, and in this account
+  `Fecha de Cierre` is populated on ~5% of won opportunities while sucursal and servicio
+  don't exist at all — they would render as empty frames, not as an honest capture-gap
+  finding. `lib/sales-pivot.ts` and `lib/sales-series.ts` **were kept**: they take the
+  dimension as a *parameter*, `pnpm verify:pivot` still asserts them, and `lost-cross-matrix`
+  still imports their constants. If DRT starts capturing close dates, rebuild the charts on
+  top of those modules — but change the seam from a **field name** to a **resolver
+  function**, because the desarrollo is not a custom field. The deleted components are
+  recoverable from `upstream` (`dashboards-GHL`) and from the VAEO panel repo; this repo's
+  own history starts at its first commit and does not contain them.
+- **`ChartContainer` (`components/ui/chart.tsx`) already wraps its child in a Recharts `ResponsiveContainer`.** Do not nest another one inside it — the chart still renders, but Recharts logs "width and height are both fixed numbers" on every resize. Charts recovered from `upstream` predate this and do nest one; drop it when you port them.
+- The panel also takes **`dateRange`** (the resolved `ResolvedDateRange | null` from `app/page.tsx`). It exists for charts that measure a date *other than* `createdAt` — nothing mounted uses it today, but keep it wired: it is exactly what a rebuilt close-date chart would need, and re-plumbing it later is the expensive part.
 - **Los dos gráficos de vigilancia de asesoras ignoran el filtro global de fechas**
   (`stale-opportunity-matrix.tsx`, `task-backlog-chart.tsx`). "Sin atención en 60 días" y
   "vencida" son condiciones de HOY, no de un periodo, así que leen `allOpportunities` y la
-  prop nueva `allTasks` en vez de las slices filtradas. Sí respetan sucursal / asesor /
-  origen / canal y el toggle de HubSpot, porque esos ya vienen aplicados aguas arriba.
+  prop nueva `allTasks` en vez de las slices filtradas. Sí respetan desarrollo / asesor /
+  origen / canal, porque esos ya vienen aplicados aguas arriba.
   - Existe una tercera prop, **`unfilteredOpportunities`** (el set crudo de
     `data.opportunities`), y NO es redundante con `allOpportunities`: esa última ya pasó
     por los menús de panel. Solo la usa el rezago de tareas, para distinguir al contacto
     que no tiene NINGUNA oportunidad —que va a la nota al pie, fuera del agregado— del que
     sí tiene pero quedó fuera de un filtro. Con `allOpportunities` en su lugar, poner un
-    filtro de sucursal hacía que la nota afirmara que 131 contactos no tenían
+    filtro de desarrollo hacía que la nota afirmara que 131 contactos no tenían
     oportunidades cuando sí las tenían. No las fusiones.
   - El eje de mensajes de la matriz **no** sale del dataset de `dashboard-messages`: esa
     ruta trae las últimas 30 conversaciones POR USUARIO (~270 de 12 054), y la ausencia de
@@ -260,7 +310,7 @@ that differs between the two lines as well. `resolvePipelineId()` matches the pi
     `updatedAt` (medido: 7-9 min por delante de `createdAt` en oportunidades que nadie
     tocó); un gráfico basado en él reportaría que todo se está trabajando.
 - Charts the shared panel had and this fork deleted are recoverable from git history / `upstream` — check there before rebuilding one from scratch.
-- The third tab (`DashboardTab` id `"conversations"`, labelled **"Asistente IA"**) renders `conversations-chat.tsx`. It is **permanently mounted and merely hidden** when inactive, so the chat history survives tab switches — do not make it conditional. It always sees the full, unfiltered dataset.
+- The last tab (`DashboardTab` id `"conversations"`, labelled **"Asistente IA"**) renders `conversations-chat.tsx`. It is **permanently mounted and merely hidden** when inactive, so the chat history survives tab switches — do not make it conditional. It always sees the full, unfiltered dataset.
 - Both dashboards can **export a branded PDF report** of their own charts (see "PDF report export").
 
 ### Data flow
@@ -427,11 +477,10 @@ bug class these modules were extracted to kill.
 | `lib/opportunity-status.ts` | `isWonOpp()` — canonical "won" detection |
 | `lib/source-platform.ts` | "Origen de lead" platform bucketing + `PLATFORM_COLORS` / `PLATFORM_ORDER` |
 | `lib/csv.ts` | CSV cell escaping (`csvCell`, `buildCsv`) |
-| `lib/panel-scope.ts` | which pipeline + sucursal custom field each panel means |
-| `lib/panel-filters.ts` | los cuatro filtros globales de la barra (sucursal, asesor, origen, canal) |
+| `lib/panel-scope.ts` | which pipeline each panel means, and the desarrollo dimension read from it |
+| `lib/panel-filters.ts` | los cuatro filtros globales de la barra (desarrollo, asesor, origen, canal) |
 | `lib/category-filter.ts` | las opciones de los menús de Origen/Canal — la contraparte **sin agrupar** de `opportunity-breakdown.ts`; no los fusiones (ver abajo) |
-| `lib/hubspot-import.ts` | which opportunities arrived already-closed from the HubSpot migration |
-| `lib/sales-pivot.ts` | the ventas pivot aggregation (mes de cierre × sucursal › servicio) |
+| `lib/sales-pivot.ts` | la agregación del pivote de ventas — **sin montar** en DRT (ver "Charts deliberately absent") |
 | `lib/sales-series.ts` | la agregación de las barras apiladas; `include` / `monthOf` / `measure` la abren a universos que no son "ganadas × mes de cierre × dinero" **sin duplicar** el orden de series ni el plegado de "Otros" |
 | `lib/opportunity-breakdown.ts` | won/open/lost bucketing per month + "Origen de Lead" / "Canal de Contacto" category rollups |
 | `lib/lost-reason-matrix.ts` | el cruce motivo de perdido × categoría (toma sus columnas de `buildCategoryBreakdown`, no re-normaliza) |
@@ -442,10 +491,15 @@ bug class these modules were extracted to kill.
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
 
 - **`isWonOpp()`**: some sub-accounts never flip `status` to `"won"` — they record a sale
-  by moving the opportunity into a late stage ("09. Negocio Ganado") while `status`
-  stays `"open"`. Detection matches the **stage name** (`/ganad[oa]|\bwon\b/i`), never
-  hardcoded stage IDs, so it stays portable across locations. An explicitly
-  `lost`/`abandoned` opp is never a win regardless of stage.
+  by moving the opportunity into a late stage while `status` stays `"open"`. Detection
+  matches the **stage name** (`/ganad[oa]|\bwon\b|\bventas?\b/i`), never hardcoded stage
+  IDs, so it stays portable across locations. An explicitly `lost`/`abandoned` opp is
+  never a win regardless of stage.
+  - **DRT is exactly that case, in different words: its winning stage is "08. Venta", not
+    "Ganado".** Measured 2026-08-24 across the six pipelines: **74 opportunities sit in
+    "08. Venta" but only 47 carry `status: "won"`**. That is why `\bventas?\b` is in the
+    pattern — without it the panel would report 47 sales instead of 74, the exact silent
+    undercount this module exists to prevent. The word boundary keeps it off "Ventana".
 - **`source-platform.ts`**: buckets into Instagram / Facebook / TikTok / Google / Otro by
   loose substring match, because field *names* differ per sub-account ("Origen de Lead"
   vs "Origen del Lead", "Tipo de pauta" vs "Tipo de anuncio"). **WhatsApp is deliberately
@@ -486,38 +540,37 @@ skill**.
 - **No mock-data fallback**: when the GHL API is unavailable or errors, the UI renders against empty arrays (`data?.contacts ?? []` patterns in `app/page.tsx`). The former `lib/mock-data.ts` and its stand-ins have been removed.
 - **All GHL API calls are server-only**: `lib/ghl-client.ts` is never imported from client components — only from API routes. This keeps the token out of the browser bundle. Client code reaches GHL data through `lib/ghl-fetchers.ts`, which calls those routes.
 - **`/opportunities/search` uses `location_id` (snake_case)** while most other endpoints use `locationId` (camelCase). The `useSnakeCaseLocationId` flag in `ghlFetch` handles this quirk.
-- **"Importación HubSpot" is a second global filter, and it is OFF by default.** Grupo VAEO
-  migrated from HubSpot on 2026-03-20; deals HubSpot had already closed came over with a
-  close date inside that month, so 485 of the VAEO pipeline's 648 won opportunities pile
-  onto mar 2026. `lib/hubspot-import.ts` requires **both** a HubSpot id custom field **and**
-  a close date within the migration month — the 10 deals that arrived open and were later
-  won in the CRM ($267,163) are real sales and keep counting. Calibrated against the
-  client's Looker Studio report ("No es de Importación"), which the panel now matches **to
-  the cent** in every settled month. Applied in `app/page.tsx` to the opportunity set
-  *before* the date filter, so the date-filtered slices and the `all*` lookup sets agree —
-  a drill-down must never surface a record the charts excluded. The AI assistant is
-  deliberately exempt, same as the date filter.
 - **Filtering is entirely client-side**: `lib/date-range.ts` (`DateFilter`, `resolveDateRange`, `filterByDateRange`) filters the already-fetched dataset by date; `components/dashboard/date-range-filter.tsx` is the UI *and* the bar that hosts every other panel-wide filter. The filtered slices are computed in `app/page.tsx` and passed to each dashboard as props. The filter bar is hidden on the AI assistant tab, which always sees the full dataset.
-- **There are three panel-wide filters, and they compose in a fixed order** — all of them
-  live in `app/page.tsx` and all of them are applied to the opportunity set **before** the
-  date cut, so the date-filtered slices and the unfiltered `all*` lookup sets agree. A
-  drill-down must never surface a record the charts excluded:
-  `data.opportunities` → `applyHubspotFilter` → `applyPanelFilters` → `scopedOpportunities`
+- **The panel-wide filters compose in a fixed order** — they live in `app/page.tsx` and are
+  applied to the opportunity set **before** the date cut, so the date-filtered slices and
+  the unfiltered `all*` lookup sets agree. A drill-down must never surface a record the
+  charts excluded:
+  `data.opportunities` → `applyPanelFilters` → `scopedOpportunities`
   → `filterByDateRange` → `opportunities`.
-  **`lib/panel-filters.ts`** owns four menus: **Sucursal**, **Asesor**, **Origen de lead**
+  **`lib/panel-filters.ts`** owns four menus: **Desarrollo**, **Asesor**, **Origen de lead**
   y **Canal de contacto** (`multi-select-filter.tsx`, one generic component mounted four
   times). Notes worth keeping:
   - **Empty selection = no filter.** Do not "fix" this into an all-selected neutral state:
-    with that convention a branch newly added in the CRM would silently sit outside a
+    with that convention a development newly added in the CRM would silently sit outside a
     filter the user believes is off.
-  - `sucursalOf()` reads **either** `Sucursal VAEO` **or** `Sucursal MESH` — an opportunity
-    only populates its own pipeline's field — which is what lets **one global menu** serve a
-    bar that lives above the tabs. Options are derived from the loaded dataset, plus a
-    `Sin sucursal` bucket so those records stay reachable.
-  - `ADVISORS` is **hardcoded to the three sales advisors the client named** (Zulema Silva,
-    Dariana Turrubiates, Diana Arbelaez); the sub-account's other six users are owner,
-    marketing and support. Matching is by **first name**, accent- and case-insensitive
-    against `opp.assignedTo`, so a corrected surname in GHL doesn't break the filter.
+  - `desarrolloOf()` reads the **pipeline name**, not a custom field — the desarrollo IS the
+    embudo — which is what lets **one global menu** serve a bar that lives above the tabs.
+    Options are derived from the loaded dataset, plus a `Sin desarrollo` bucket so records
+    in an unresolved pipeline stay reachable. With no pipeline list everything lands in
+    that bucket; that degraded mode is deliberate, since inventing a desarrollo is worse.
+  - **The advisor list is derived from the DATA, never hardcoded.** `collectAdvisors()`
+    reads the distinct `assignedTo` values and orders them **by volume descending** — with
+    ~24 advisors, alphabetical buries the people who actually sell. A hand-written list
+    (which is what the VAEO fork had) goes stale in silence the first time someone joins.
+  - **The advisor key is the FULL normalized name, not the first name.** This account has an
+    *Adriana López* and an *Adriana Ortega*, a *Mónica Gomez* and a *Mónica Leal*: matching
+    on the first name would merge two people into one row and misattribute their pipelines
+    with nothing looking broken. The accepted cost is symmetric — a surname corrected in GHL
+    shows up as a new advisor until the next sync — but that failure is **visible** (a row
+    splits in two), which is the right side to err on. `scripts/verify-panel-filters.ts`
+    asserts both collisions; don't "simplify" it back to first names.
+  - A `Sin asesor` bucket is selectable, and it matters: **~17% of opportunities are
+    orphaned**, and a filter that couldn't reach them would hide the biggest leak.
   - **Los menús de origen y canal listan cada grafía capturada por separado**, sin agrupar:
     `Walk In` / `WALK IN` / `walk-in` son tres filas, ordenadas de modo que queden
     consecutivas y con un ⚠ que las señala. Los charts las SIGUEN agrupando. La asimetría
@@ -527,9 +580,9 @@ skill**.
     fusionando los módulos**; `category-filter` solo le pide prestado
     `normalizeCategoryKey` para ordenar, nunca para unir dos opciones.
   - Sus opciones se acotan al pipeline de la pestaña activa y al rango de fechas; las de
-    sucursal y asesor no. Divergencia conocida, documentada en el spec del filtro.
-  - They filter **opportunities only** — contacts carry no sucursal of their own.
-  - The AI assistant is exempt, same as the date filter and the HubSpot toggle.
+    desarrollo y asesor no. Divergencia conocida, documentada en el spec del filtro.
+  - They filter **opportunities only** — contacts carry no desarrollo of their own.
+  - The AI assistant is exempt, same as the date filter.
 - **`calls` is always empty** in live data — GHL doesn't expose a public calls endpoint in the standard API. **`tasks` is populated** via the location-wide `/locations/:id/tasks/search` endpoint (`searchLocationTasks`), fetched concurrently with the other datasets.
 - **Drill-downs resolve joins against the *unfiltered* set.** Dashboards take both
   `opportunities` (date-filtered, for display) and `allOpportunities` (everything, as a
@@ -564,7 +617,7 @@ An HTTP MCP server (`ghl-mcp`, configured in `.mcp.json`) connects directly to G
   label + tooltip explaining a chart's rule), and `CardTone` (won/lost card tints — the
   light/dark pairs are tuned by eye, not numerically matched; don't "normalize" them)
 - **Toda cubeta centinela va en el rojizo de `MISSING_TEXT`** (`dashboard-ui.tsx`, token
-  `--missing`): "Sin fecha", "Sin sucursal", "Sin servicio", "Sin dato", "Sin asesor",
+  `--missing`): "Sin fecha", "Sin desarrollo", "Sin servicio", "Sin dato", "Sin asesor",
   "Sin motivo", y el "Sin datos de contacto" del drawer. No son una categoría del negocio
   sino un hueco de captura en GHL, y el gris de antes las hacía leer como una fila más.
   Tres reglas: (1) tiñe **solo la etiqueta** — la barra, el sombreado y el segmento

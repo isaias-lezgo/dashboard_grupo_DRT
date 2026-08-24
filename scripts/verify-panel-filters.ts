@@ -1,51 +1,53 @@
-// Verification for lib/panel-filters.ts — los dos filtros globales de la barra.
-// Run: pnpm verify:filters
+// Verification for lib/panel-filters.ts — los cuatro filtros globales de la
+// barra (desarrollo, asesor, origen, canal).
 //
-// Un filtro mal no truena: solo devuelve menos registros, y menos registros se
-// ven exactamente igual que un mes flojo. Por eso vive aquí.
+// Un filtro silenciosamente mal se ve igual que uno bien: números más chicos.
+// Por eso estas aserciones existen y por eso el módulo es puro y sin React.
 //
-// Wrapped in main() rather than using top-level await: this package is CJS.
+// Correr con: pnpm verify:filters
 import assert from "node:assert/strict";
-import type { Opportunity } from "../lib/types";
-import { PANEL_SCOPES } from "../lib/panel-scope";
-import { NO_SUCURSAL } from "../lib/sales-pivot";
+import type { Opportunity, Pipeline } from "../lib/types";
+import { NO_DESARROLLO, PANEL_SCOPES } from "../lib/panel-scope";
 import {
   activeFilterCount,
   advisorKeyOf,
   applyPanelFilters,
-  collectSucursales,
+  collectAdvisors,
   EMPTY_PANEL_FILTERS,
-  sucursalOf,
+  NO_ASESOR,
   type PanelFilters,
 } from "../lib/panel-filters";
 
-const VAEO_FIELD = PANEL_SCOPES.vaeo.sucursalField; // "Sucursal VAEO"
-const MESH_FIELD = PANEL_SCOPES.mesh.sucursalField; // "Sucursal MESH"
+const CANADAS = "id-canadas";
+const ATRIA = "id-atria";
+
+/** Los embudos son los desarrollos: el filtro lee el nombre de aquí. */
+const PIPELINES: Pipeline[] = [
+  { id: CANADAS, name: "Cañadas", stages: ["00. Recibido", "08. Venta"] },
+  { id: ATRIA, name: "Atria", stages: ["00. Recibido", "08. Venta"] },
+];
 
 let seq = 0;
 
 function opp(o: {
-  sucursalVaeo?: string;
-  sucursalMesh?: string;
+  pipelineId?: string;
   asesor?: string;
   origen?: string;
 }): Opportunity {
   const resolved: Record<string, string> = {};
-  if (o.sucursalVaeo !== undefined) resolved[VAEO_FIELD] = o.sucursalVaeo;
-  if (o.sucursalMesh !== undefined) resolved[MESH_FIELD] = o.sucursalMesh;
   if (o.origen !== undefined) resolved["Origen de Lead"] = o.origen;
 
   return {
     id: `o${++seq}`,
     name: `Opp ${seq}`,
-    pipelineId: PANEL_SCOPES.vaeo.pipelineId,
+    pipelineId: o.pipelineId ?? CANADAS,
     pipelineStageId: "stage-1",
     status: "open",
     createdAt: "2026-01-01T00:00:00.000Z",
     contactId: `c${seq}`,
     value: 1,
-    stage: "Nuevo Lead",
-    pipelineName: "VAEO",
+    stage: "00. Recibido",
+    pipelineName: "Cañadas",
     assignedTo: o.asesor,
     customFieldsResolved: resolved,
   };
@@ -61,152 +63,173 @@ function main() {
   // 1. Sin selección no se filtra NADA, y se devuelve la MISMA referencia.
   // Una copia nueva invalidaría los memos de app/page.tsx en cada render.
   {
-    const opps = [opp({ sucursalVaeo: "MTY Tanarah", asesor: "Zulema Silva" })];
+    const opps = [opp({ asesor: "Judith Gil" })];
     assert.equal(
-      applyPanelFilters(opps, EMPTY_PANEL_FILTERS),
+      applyPanelFilters(opps, EMPTY_PANEL_FILTERS, PIPELINES),
       opps,
       "sin filtros: misma referencia, sin copia"
     );
     assert.equal(activeFilterCount(EMPTY_PANEL_FILTERS), 0);
   }
 
-  // 2. sucursalOf lee cualquiera de los dos campos, y la cubeta vacía cubre
-  // tanto el campo ausente como uno de puros espacios.
-  {
-    assert.equal(sucursalOf(opp({ sucursalVaeo: "SLP Covalia" })), "SLP Covalia");
-    assert.equal(sucursalOf(opp({ sucursalMesh: "MTY Varzor" })), "MTY Varzor");
-    assert.equal(sucursalOf(opp({})), NO_SUCURSAL, "sin campo cae en la cubeta vacía");
-    assert.equal(
-      sucursalOf(opp({ sucursalVaeo: "   " })),
-      NO_SUCURSAL,
-      "puros espacios es lo mismo que vacío"
-    );
-    // El valor se recorta, no se compara con espacios pegados.
-    assert.equal(sucursalOf(opp({ sucursalVaeo: " QRO Central Park " })), "QRO Central Park");
-  }
-
-  // 3. Filtro por sucursal: OR dentro del menú, y NO_SUCURSAL alcanza a los que
-  // no tienen — si no, esos registros serían inalcanzables desde la barra.
+  // 2. El desarrollo sale del EMBUDO, no de un campo personalizado: en esta
+  // subcuenta el pipeline ES el desarrollo. Un embudo que no resuelve cae en la
+  // cubeta centinela en vez de desaparecer.
   {
     const opps = [
-      opp({ sucursalVaeo: "MTY Tanarah" }),
-      opp({ sucursalVaeo: "SLP Covalia" }),
-      opp({ sucursalMesh: "MTY Varzor" }),
-      opp({}),
+      opp({ pipelineId: CANADAS }),
+      opp({ pipelineId: ATRIA }),
+      opp({ pipelineId: "embudo-que-no-existe" }),
     ];
-    const two = applyPanelFilters(
-      opps,
-      filters({ sucursales: ["MTY Tanarah", "MTY Varzor"] })
-    );
-    assert.deepEqual(
-      two.map(sucursalOf),
-      ["MTY Tanarah", "MTY Varzor"],
-      "OR dentro del menú, cruzando el campo de VAEO y el de MESH"
-    );
+    const dos = applyPanelFilters(opps, filters({ desarrollos: ["Cañadas", "Atria"] }), PIPELINES);
+    assert.equal(dos.length, 2, "OR dentro del menú");
 
-    const sinSucursal = applyPanelFilters(opps, filters({ sucursales: [NO_SUCURSAL] }));
+    const huerfanas = applyPanelFilters(opps, filters({ desarrollos: [NO_DESARROLLO] }), PIPELINES);
     assert.deepEqual(
-      sinSucursal.map(sucursalOf),
-      [NO_SUCURSAL],
+      huerfanas.map((o) => o.pipelineId),
+      ["embudo-que-no-existe"],
       "la cubeta vacía es seleccionable, no un agujero"
     );
+
+    // Sin la lista de embudos NADA resuelve: todo cae en la cubeta centinela.
+    // Es el modo degradado correcto — inventar un desarrollo sería peor.
+    assert.equal(
+      applyPanelFilters(opps, filters({ desarrollos: [NO_DESARROLLO] }), undefined).length,
+      3,
+      "sin pipelines, ninguna resuelve su desarrollo"
+    );
   }
 
-  // 4. Filtro por asesor: match por PRIMER NOMBRE, sin acentos ni mayúsculas.
-  // Un apellido corregido en GHL no debe romper el filtro en silencio.
+  // 3. La clave del asesor es el nombre COMPLETO normalizado, no el primero.
+  // Esta es LA aserción que impide la regresión más cara del filtro: la
+  // subcuenta tiene dos Adrianas y dos Mónicas distintas, y casar por primer
+  // nombre las fundiría en una sola fila sin que nada se viera roto.
   {
-    assert.equal(advisorKeyOf(opp({ asesor: "Zulema Silva" })), "zulema");
-    assert.equal(advisorKeyOf(opp({ asesor: "zulema silva garza" })), "zulema", "sin mayúsculas");
-    assert.equal(advisorKeyOf(opp({ asesor: "Zulemá Silva" })), "zulema", "sin acentos");
-    assert.equal(advisorKeyOf(opp({ asesor: "Dariana Turrubiates" })), "dariana");
-    assert.equal(advisorKeyOf(opp({ asesor: "Diana Arbelaez" })), "diana");
-    // "diana" NO debe capturar a "dariana": el match es de token completo.
-    assert.notEqual(advisorKeyOf(opp({ asesor: "Dariana Turrubiates" })), "diana");
-    assert.equal(advisorKeyOf(opp({ asesor: "Jorge Pizzuto" })), undefined, "otro usuario no cuenta");
-    assert.equal(advisorKeyOf(opp({})), undefined, "sin asignar no cuenta");
+    assert.equal(advisorKeyOf(opp({ asesor: "Judith Gil" })), "judith gil");
+    assert.equal(advisorKeyOf(opp({ asesor: "JUDITH GIL" })), "judith gil", "sin mayúsculas");
+    assert.equal(advisorKeyOf(opp({ asesor: "Judíth Gil" })), "judith gil", "sin acentos");
+    assert.equal(advisorKeyOf(opp({ asesor: " Judith   Gil " })), "judith gil", "espacios colapsados");
 
+    assert.notEqual(
+      advisorKeyOf(opp({ asesor: "Adriana López" })),
+      advisorKeyOf(opp({ asesor: "Adriana Ortega" })),
+      "dos Adrianas distintas NO comparten clave"
+    );
+    assert.notEqual(
+      advisorKeyOf(opp({ asesor: "Mónica Gomez" })),
+      advisorKeyOf(opp({ asesor: "Mónica Leal" })),
+      "dos Mónicas distintas NO comparten clave"
+    );
+
+    assert.equal(advisorKeyOf(opp({})), NO_ASESOR, "sin asignar cae en la cubeta centinela");
+    assert.equal(advisorKeyOf(opp({ asesor: "   " })), NO_ASESOR, "puros espacios es lo mismo que vacío");
+  }
+
+  // 4. Filtro por asesor, incluida la cubeta de las huérfanas: ~17% de las
+  // oportunidades de DRT no tienen asesor, así que tienen que ser alcanzables.
+  {
     const opps = [
-      opp({ asesor: "Zulema Silva" }),
-      opp({ asesor: "Diana Arbelaez" }),
-      opp({ asesor: "Jorge Pizzuto" }),
+      opp({ asesor: "Judith Gil" }),
+      opp({ asesor: "Adriana López" }),
+      opp({ asesor: "Adriana Ortega" }),
       opp({}),
     ];
-    const solo = applyPanelFilters(opps, filters({ asesores: ["zulema"] }));
-    assert.deepEqual(solo.map((o) => o.assignedTo), ["Zulema Silva"]);
-    const dos = applyPanelFilters(opps, filters({ asesores: ["zulema", "diana"] }));
+    const solo = applyPanelFilters(opps, filters({ asesores: ["judith gil"] }), PIPELINES);
+    assert.deepEqual(solo.map((o) => o.assignedTo), ["Judith Gil"]);
+
+    const unaAdriana = applyPanelFilters(opps, filters({ asesores: ["adriana lopez"] }), PIPELINES);
+    assert.deepEqual(
+      unaAdriana.map((o) => o.assignedTo),
+      ["Adriana López"],
+      "seleccionar una Adriana NO arrastra a la otra"
+    );
+
+    const dos = applyPanelFilters(opps, filters({ asesores: ["judith gil", "adriana ortega"] }), PIPELINES);
     assert.equal(dos.length, 2, "OR dentro del menú de asesores");
+
+    const huerfanas = applyPanelFilters(opps, filters({ asesores: [NO_ASESOR] }), PIPELINES);
+    assert.equal(huerfanas.length, 1, "las oportunidades sin asesor son seleccionables");
+    assert.equal(huerfanas[0].assignedTo, undefined);
+
     assert.equal(
-      applyPanelFilters(opps, filters({ asesores: ["dariana"] })).length,
+      applyPanelFilters(opps, filters({ asesores: ["quien no existe"] }), PIPELINES).length,
       0,
       "un asesor sin oportunidades devuelve vacío, no todo"
     );
   }
 
-  // 5. Los dos menús combinan con AND.
+  // 5. collectAdvisors: por VOLUMEN descendente, con la etiqueta legible, y sin
+  // la cubeta de las huérfanas (el menú la agrega aparte, siempre al final).
   {
     const opps = [
-      opp({ sucursalVaeo: "MTY Tanarah", asesor: "Zulema Silva" }),
-      opp({ sucursalVaeo: "MTY Tanarah", asesor: "Diana Arbelaez" }),
-      opp({ sucursalVaeo: "SLP Covalia", asesor: "Zulema Silva" }),
-    ];
-    const both = applyPanelFilters(
-      opps,
-      filters({ sucursales: ["MTY Tanarah"], asesores: ["zulema"] })
-    );
-    assert.equal(both.length, 1, "sucursal Y asesor, no sucursal O asesor");
-    assert.equal(both[0].customFieldsResolved?.[VAEO_FIELD], "MTY Tanarah");
-    assert.equal(both[0].assignedTo, "Zulema Silva");
-    assert.equal(
-      activeFilterCount(filters({ sucursales: ["MTY Tanarah"], asesores: ["zulema"] })),
-      2
-    );
-  }
-
-  // 6. collectSucursales: distintos, ordenados, sin la cubeta vacía (el menú la
-  // agrega aparte para dejarla siempre al final).
-  {
-    const opps = [
-      opp({ sucursalVaeo: "SLP Covalia" }),
-      opp({ sucursalVaeo: "MTY Tanarah" }),
-      opp({ sucursalVaeo: "MTY Tanarah" }),
-      opp({ sucursalMesh: "QRO Central Park" }),
+      opp({ asesor: "Adriana López" }),
+      opp({ asesor: "Judith Gil" }),
+      opp({ asesor: "Judith Gil" }),
+      opp({ asesor: "Judith Gil" }),
+      opp({ asesor: "Adriana López" }),
+      opp({ asesor: "Mónica Leal" }),
       opp({}),
     ];
     assert.deepEqual(
-      collectSucursales(opps),
-      ["MTY Tanarah", "QRO Central Park", "SLP Covalia"],
-      "distintos y ordenados, sin la cubeta vacía"
+      collectAdvisors(opps).map((a) => a.label),
+      ["Judith Gil", "Adriana López", "Mónica Leal"],
+      "por volumen descendente: con ~24 asesores el alfabético entierra a los que venden"
     );
-    assert.deepEqual(collectSucursales([]), [], "sin datos, sin opciones");
+    assert.deepEqual(
+      collectAdvisors(opps).map((a) => a.key),
+      ["judith gil", "adriana lopez", "monica leal"],
+      "la clave va normalizada; la etiqueta conserva acentos"
+    );
+    assert.deepEqual(collectAdvisors([]), [], "sin datos, sin opciones");
+
+    // Dos grafías de la misma persona son UNA opción, con la primera vista
+    // como etiqueta. Distinto de origen/canal, donde las grafías NO se agrupan.
+    const grafias = [opp({ asesor: "Mónica Leal" }), opp({ asesor: "monica leal" })];
+    assert.deepEqual(
+      collectAdvisors(grafias),
+      [{ key: "monica leal", label: "Mónica Leal" }],
+      "acentos y mayúsculas no parten a una persona en dos"
+    );
   }
 
-  // 7. Los CUATRO menús cruzan con AND. Esta es la razón de que origen y canal
-  // vivan en el mismo objeto de estado que sucursal y asesor: el cruce está
-  // escrito una sola vez.
+  // 6. Los CUATRO menús cruzan con AND. Esta es la razón de que los cuatro
+  // vivan en el mismo objeto de estado: el cruce está escrito una sola vez.
   {
     const opps = [
-      opp({ sucursalVaeo: "MTY Tanarah", asesor: "Zulema Silva", origen: "Meta" }),
-      opp({ sucursalVaeo: "MTY Tanarah", asesor: "Zulema Silva", origen: "Walk In" }),
-      opp({ sucursalVaeo: "SLP Covalia", asesor: "Zulema Silva", origen: "Meta" }),
-      opp({ sucursalVaeo: "MTY Tanarah", asesor: "Diana Arbelaez", origen: "Meta" }),
+      opp({ pipelineId: CANADAS, asesor: "Judith Gil", origen: "Meta" }),
+      opp({ pipelineId: CANADAS, asesor: "Judith Gil", origen: "Walk In" }),
+      opp({ pipelineId: ATRIA, asesor: "Judith Gil", origen: "Meta" }),
+      opp({ pipelineId: CANADAS, asesor: "Adriana López", origen: "Meta" }),
     ];
     const all = applyPanelFilters(
       opps,
-      filters({ sucursales: ["MTY Tanarah"], asesores: ["zulema"], origen: ["Meta"] })
+      filters({ desarrollos: ["Cañadas"], asesores: ["judith gil"], origen: ["Meta"] }),
+      PIPELINES
     );
-    assert.equal(all.length, 1, "sucursal Y asesor Y origen");
+    assert.equal(all.length, 1, "desarrollo Y asesor Y origen");
     assert.equal(
       activeFilterCount(filters({ origen: ["Meta"], canal: ["WhatsApp", "DM"] })),
       3,
-      "la píldora de filtros activos cuenta también los dos menús nuevos"
+      "la píldora de filtros activos cuenta los cuatro menús"
     );
 
     // Las grafías NO se agrupan tampoco cruzando el filtro completo.
     const variantes = [opp({ origen: "Walk In" }), opp({ origen: "WALK IN" })];
-    assert.equal(applyPanelFilters(variantes, filters({ origen: ["Walk In"] })).length, 1);
+    assert.equal(
+      applyPanelFilters(variantes, filters({ origen: ["Walk In"] }), PIPELINES).length,
+      1
+    );
 
     // Y sin selección en ninguno de los cuatro, sigue siendo la misma referencia.
-    assert.equal(applyPanelFilters(opps, EMPTY_PANEL_FILTERS), opps);
+    assert.equal(applyPanelFilters(opps, EMPTY_PANEL_FILTERS, PIPELINES), opps);
+  }
+
+  // 7. Los seis desarrollos del roster tienen embudo; GENERAL a propósito no.
+  {
+    assert.equal(PANEL_SCOPES.general.pipelineId, null, "GENERAL no acota a ningún embudo");
+    for (const id of ["atria", "canadas", "lasierra", "palmyra", "saggita", "zanda"] as const) {
+      assert.ok(PANEL_SCOPES[id].pipelineId, `${id} tiene embudo de respaldo`);
+    }
   }
 
   console.log("verify-panel-filters: all assertions passed");

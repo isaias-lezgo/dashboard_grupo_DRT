@@ -4,11 +4,9 @@ import { useState, useEffect, useMemo } from "react"
 import Image from "next/image"
 import { useTheme } from "next-themes"
 import { AnimatePresence } from "framer-motion"
-import { VaeoDashboard } from "@/components/dashboard/vaeo-dashboard"
+import { PanelDashboard } from "@/components/dashboard/panel-dashboard"
 import { DateRangeFilter } from "@/components/dashboard/date-range-filter"
 import { filterByDateRange, resolveDateRange, type DateFilter } from "@/lib/date-range"
-import { applyHubspotFilter, isHubspotImport } from "@/lib/hubspot-import"
-import { HubspotImportToggle } from "@/components/dashboard/hubspot-import-toggle"
 import {
   ActiveFiltersPill,
   MultiSelectFilter,
@@ -20,21 +18,26 @@ import {
   type CategoryOption,
 } from "@/lib/category-filter"
 import { NO_VALUE_KEY, NO_VALUE_LABEL } from "@/lib/opportunity-breakdown"
-import { scopeOpportunities } from "@/lib/panel-scope"
+import {
+  collectDesarrollos,
+  desarrolloOf,
+  DESARROLLO_PANELS,
+  NO_DESARROLLO,
+  PANEL_SCOPES,
+  scopeOpportunities,
+  type PanelId,
+} from "@/lib/panel-scope"
 import {
   activeFilterCount,
-  ADVISORS,
   advisorKeyOf,
   applyPanelFilters,
-  collectSucursales,
+  collectAdvisors,
   EMPTY_PANEL_FILTERS,
-  sucursalOf,
+  NO_ASESOR,
   type PanelFilters,
 } from "@/lib/panel-filters"
-import { NO_SUCURSAL } from "@/lib/sales-pivot"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { MeshDashboard } from "@/components/dashboard/mesh-dashboard"
 import { ConversationsChat } from "@/components/dashboard/conversations-chat"
 import { LoadingScreen } from "@/components/dashboard/loading-screen"
 import { SyncWarningBanner } from "@/components/dashboard/sync-warning-banner"
@@ -43,11 +46,11 @@ import { useConversationsData } from "@/hooks/use-conversations-data"
 import { useConversationActivity } from "@/hooks/use-conversation-activity"
 import {
   Building2,
+  LayoutGrid,
   MapPin,
   Megaphone,
   MessageSquare,
   UserRound,
-  Network,
   RefreshCw,
   Loader2,
   AlertCircle,
@@ -63,15 +66,18 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
-// The two business lines of Grupo VAEO, one panel each, plus the AI assistant.
-type DashboardTab = "vaeo" | "mesh" | "conversations"
+// GENERAL, un panel por desarrollo, y el asistente de IA.
+type DashboardTab = PanelId | "conversations"
+
+/** Las pestañas, en orden. GENERAL primero: es la vista de grupo. */
+const PANEL_TABS = ["general", ...DESARROLLO_PANELS] as const satisfies readonly PanelId[]
 
 // Browser-tab title per view. The app is a single route, so the title is set
 // imperatively — `metadata` in layout.tsx can only give one static fallback.
-const TAB_TITLES: Record<DashboardTab, string> = {
-  vaeo: "VAEO - Lezgo Suite CRM",
-  mesh: "MESH - Lezgo Suite CRM",
-  conversations: "Asistente IA - Lezgo Suite CRM",
+function tabTitle(tab: DashboardTab): string {
+  if (tab === "conversations") return "Asistente IA - Lezgo Suite CRM"
+  const { label } = PANEL_SCOPES[tab]
+  return `${tab === "general" ? "General" : label} - Lezgo Suite CRM`
 }
 
 /**
@@ -118,7 +124,7 @@ function relativeAge(fetchedAt: string, _tick: number): string {
 export default function DashboardPage() {
   const { resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [activeTab, setActiveTab] = useState<DashboardTab>("vaeo")
+  const [activeTab, setActiveTab] = useState<DashboardTab>("general")
   // El texto "Actualizado hace X" es relativo, así que tiene que re-renderizarse
   // solo; nada más en la página cambia para obligarlo.
   const [nowTick, setNowTick] = useState(0)
@@ -130,7 +136,7 @@ export default function DashboardPage() {
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => { document.title = TAB_TITLES[activeTab] }, [activeTab])
+  useEffect(() => { document.title = tabTitle(activeTab) }, [activeTab])
 
   const {
     data,
@@ -157,67 +163,60 @@ export default function DashboardPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>({ preset: "all" })
   const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter])
 
-  // Panel-wide scope toggle, OFF by default: the HubSpot migration stamped its
-  // own bulk close date on every deal it created, so including them piles ~76%
-  // of the won opportunities onto the month the migration ran. Applied here, at
-  // the source, so BOTH the date-filtered slices and the unfiltered `all*`
-  // lookup sets agree — a drill-down must never surface a record the charts are
-  // excluding. The AI assistant is deliberately left out (it always reasons over
-  // the full dataset), same as the date filter.
-  const [includeHubspot, setIncludeHubspot] = useState(false)
-  const hubspotScoped = useMemo(
-    () => applyHubspotFilter(data?.opportunities ?? [], includeHubspot),
-    [data?.opportunities, includeHubspot]
-  )
-  const hubspotImportCount = useMemo(
-    () => (data?.opportunities ?? []).filter(isHubspotImport).length,
-    [data?.opportunities]
-  )
-
-  // Los otros dos filtros de alcance: sucursal y asesor. Se aplican aquí, sobre
-  // el mismo set y antes del corte por fecha, por la misma razón que el de
-  // HubSpot: las slices filtradas y los sets `all*` que resuelven los
-  // drill-downs tienen que ver el mismo universo. Ver lib/panel-filters.ts.
+  // Los cuatro filtros de alcance de la barra. Se aplican aquí, sobre el set
+  // crudo y ANTES del corte por fecha, para que las slices filtradas y los sets
+  // `all*` que resuelven los drill-downs vean el mismo universo: un drawer nunca
+  // puede sacar a la luz un registro que los gráficos excluyeron. El asistente
+  // de IA queda fuera a propósito, igual que del filtro de fechas.
+  const baseOpportunities = data?.opportunities ?? []
   const [panelFilters, setPanelFilters] = useState<PanelFilters>(EMPTY_PANEL_FILTERS)
   const scopedOpportunities = useMemo(
-    () => applyPanelFilters(hubspotScoped, panelFilters),
-    [hubspotScoped, panelFilters]
+    () => applyPanelFilters(baseOpportunities, panelFilters, data?.pipelines),
+    [baseOpportunities, panelFilters, data?.pipelines]
   )
 
   // Las opciones y sus conteos se calculan SIN los filtros de panel puestos: si
   // se calcularan sobre el set ya filtrado, elegir una sucursal dejaría el menú
   // con una sola opción y sin manera de agregar otra.
-  const sucursalOptions = useMemo(() => {
+  const desarrolloOptions = useMemo(() => {
+    const pipelines = data?.pipelines
     const counts = new Map<string, number>()
-    for (const o of hubspotScoped) {
-      const s = sucursalOf(o)
-      counts.set(s, (counts.get(s) ?? 0) + 1)
+    for (const o of baseOpportunities) {
+      const d = desarrolloOf(o, pipelines)
+      counts.set(d, (counts.get(d) ?? 0) + 1)
     }
-    const named = collectSucursales(hubspotScoped).map((value) => ({
+    const named = collectDesarrollos(baseOpportunities, pipelines).map((value) => ({
       value,
       label: value,
       count: counts.get(value) ?? 0,
     }))
-    const sinSucursal = counts.get(NO_SUCURSAL) ?? 0
-    // La cubeta vacía siempre al final y en gris: no es una sucursal, pero deja
+    const sinDesarrollo = counts.get(NO_DESARROLLO) ?? 0
+    // La cubeta vacía siempre al final y en gris: no es un desarrollo, pero deja
     // esos registros alcanzables desde la barra.
-    return sinSucursal > 0
-      ? [...named, { value: NO_SUCURSAL, label: NO_SUCURSAL, count: sinSucursal, muted: true }]
+    return sinDesarrollo > 0
+      ? [...named, { value: NO_DESARROLLO, label: NO_DESARROLLO, count: sinDesarrollo, muted: true }]
       : named
-  }, [hubspotScoped])
+  }, [baseOpportunities, data?.pipelines])
 
+  // Los asesores salen de los DATOS, no de una lista escrita a mano: la
+  // subcuenta tiene ~24 asesores activos y una lista fija se desactualiza en
+  // silencio la primera vez que entra alguien nuevo al equipo.
   const asesorOptions = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const o of hubspotScoped) {
+    for (const o of baseOpportunities) {
       const key = advisorKeyOf(o)
-      if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
     }
-    return ADVISORS.map((a) => ({
+    const named = collectAdvisors(baseOpportunities).map((a) => ({
       value: a.key,
       label: a.label,
       count: counts.get(a.key) ?? 0,
     }))
-  }, [hubspotScoped])
+    const sinAsesor = counts.get(NO_ASESOR) ?? 0
+    return sinAsesor > 0
+      ? [...named, { value: NO_ASESOR, label: NO_ASESOR, count: sinAsesor, muted: true }]
+      : named
+  }, [baseOpportunities])
 
   // Las opciones de origen y canal se acotan al pipeline de la pestaña activa y
   // al rango de fechas —así los conteos hablan de lo que el panel está
@@ -228,9 +227,9 @@ export default function DashboardPage() {
   // set completo. Está documentado en el spec como divergencia conocida.
   const categoryBase = useMemo(() => {
     if (activeTab === "conversations") return []
-    const scoped = scopeOpportunities(hubspotScoped, activeTab, data?.pipelines ?? [])
+    const scoped = scopeOpportunities(baseOpportunities, activeTab, data?.pipelines ?? [])
     return filterByDateRange(scoped, (o) => o.createdAt, dateRange)
-  }, [hubspotScoped, activeTab, data?.pipelines, dateRange])
+  }, [baseOpportunities, activeTab, data?.pipelines, dateRange])
 
   const origenOptions = useMemo(
     () => toMenuOptions(buildCategoryOptions(categoryBase, "origen"), panelFilters.origen),
@@ -261,17 +260,20 @@ export default function DashboardPage() {
     const list = (values: string[]) =>
       values.map((v) => (v === NO_VALUE_KEY ? NO_VALUE_LABEL : v)).join(", ")
     const parts = [base]
-    if (panelFilters.sucursales.length) parts.push(`Sucursal: ${list(panelFilters.sucursales)}`)
+    if (panelFilters.desarrollos.length)
+      parts.push(`Desarrollo: ${list(panelFilters.desarrollos)}`)
     if (panelFilters.asesores.length) {
+      // Las claves son nombres normalizados; la etiqueta legible vive en las
+      // opciones del menú, que ya se derivaron de los datos.
       const names = panelFilters.asesores.map(
-        (k) => ADVISORS.find((a) => a.key === k)?.label ?? k
+        (k) => asesorOptions.find((a) => a.value === k)?.label ?? k
       )
       parts.push(`Asesor: ${names.join(", ")}`)
     }
     if (panelFilters.origen.length) parts.push(`Origen: ${list(panelFilters.origen)}`)
     if (panelFilters.canal.length) parts.push(`Canal: ${list(panelFilters.canal)}`)
     return parts.join(" · ")
-  }, [dateFilter.preset, dateRange, panelFilters])
+  }, [dateFilter.preset, dateRange, panelFilters, asesorOptions])
 
   const contacts = useMemo(
     () => filterByDateRange(data?.contacts ?? [], (c) => c.createdAt, dateRange),
@@ -453,14 +455,23 @@ export default function DashboardPage() {
       )}
 
       <nav className="border-b border-border bg-card px-4 sm:px-6" aria-label="Vistas del panel">
-        <div className="flex gap-6 sm:gap-8">
-          {(
-            [
-              { id: "vaeo" as const, label: "VAEO", icon: Building2, mark: "/vaeo-mark.png" },
-              { id: "mesh" as const, label: "MESH", icon: Network, mark: "/mesh-mark.png" },
-              { id: "conversations" as const, label: "Asistente IA", icon: Sparkles, mark: null },
-            ] as const
-          ).map(({ id, label, icon: Icon, mark }) => {
+        {/* Ocho pestañas no caben en un teléfono: la fila se desplaza en vez de
+            apretarse hasta romper las etiquetas. */}
+        <div className="flex gap-5 overflow-x-auto sm:gap-8">
+          {[
+            ...PANEL_TABS.map((id) => ({
+              id: id as DashboardTab,
+              label: id === "general" ? "GENERAL" : PANEL_SCOPES[id].label,
+              icon: id === "general" ? LayoutGrid : Building2,
+              mark: null as string | null,
+            })),
+            {
+              id: "conversations" as DashboardTab,
+              label: "Asistente IA",
+              icon: Sparkles,
+              mark: null as string | null,
+            },
+          ].map(({ id, label, icon: Icon, mark }) => {
             const active = activeTab === id
             return (
               <button
@@ -504,12 +515,12 @@ export default function DashboardPage() {
           filters={
             <>
               <MultiSelectFilter
-                label="Sucursal"
+                label="Desarrollo"
                 icon={MapPin}
-                options={sucursalOptions}
-                selected={panelFilters.sucursales}
-                onChange={(sucursales) => setPanelFilters((f) => ({ ...f, sucursales }))}
-                emptyMessage="Ninguna oportunidad trae sucursal"
+                options={desarrolloOptions}
+                selected={panelFilters.desarrollos}
+                onChange={(desarrollos) => setPanelFilters((f) => ({ ...f, desarrollos }))}
+                emptyMessage="Ninguna oportunidad resuelve su desarrollo"
               />
               <MultiSelectFilter
                 label="Asesor"
@@ -517,6 +528,8 @@ export default function DashboardPage() {
                 options={asesorOptions}
                 selected={panelFilters.asesores}
                 onChange={(asesores) => setPanelFilters((f) => ({ ...f, asesores }))}
+                emptyMessage="Ninguna oportunidad tiene asesor asignado"
+                searchable
               />
               <MultiSelectFilter
                 label="Origen de lead"
@@ -542,51 +555,20 @@ export default function DashboardPage() {
               />
             </>
           }
-          trailing={
-            <HubspotImportToggle
-              checked={includeHubspot}
-              onCheckedChange={setIncludeHubspot}
-              importedCount={hubspotImportCount}
-            />
-          }
         />
       )}
 
       {/* Dashboard Content */}
       <div className="flex-1 pt-2 pb-6">
-        {/* Both business-line panels get the identical prop surface: the
-            date-filtered slices for charts, plus the unfiltered `all*` sets as
-            lookup tables for drill-down joins. Keep them in sync as charts are
-            built out, so a chart can move between panels unchanged. */}
-        {activeTab === "vaeo" && (
-          <VaeoDashboard
-            opportunities={opportunities}
-            allOpportunities={scopedOpportunities}
-            contacts={contacts}
-            allContacts={data?.contacts ?? []}
-            pautas={pautas}
-            allPautas={data?.pautas ?? []}
-            pipelines={data?.pipelines ?? []}
-            tasks={tasks}
-            allTasks={data?.tasks ?? []}
-            unfilteredOpportunities={data?.opportunities ?? []}
-            conversationActivity={conversationActivity}
-            activityStatus={activityStatus}
-            onRetryActivity={refreshActivity}
-            calls={calls}
-            messages={filteredMessages}
-            allMessages={messages}
-            appointments={appointments}
-            allAppointments={data?.appointments ?? []}
-            members={availableMembers}
-            locationId={data?.locationId ?? ""}
-            locationName={locationName ?? undefined}
-            periodLabel={periodLabel}
-            dateRange={dateRange}
-          />
-        )}
-        {activeTab === "mesh" && (
-          <MeshDashboard
+        {/* Un solo panel para los siete alcances: `panel` decide el embudo y
+            lib/panel-scope.ts decide qué significa. La superficie de props es la
+            misma para todos — las slices cortadas por fecha para los gráficos,
+            más los sets `all*` sin filtrar como tablas de lookup de los joins de
+            drill-down. */}
+        {activeTab !== "conversations" && (
+          <PanelDashboard
+            key={activeTab}
+            panel={activeTab}
             opportunities={opportunities}
             allOpportunities={scopedOpportunities}
             contacts={contacts}
@@ -613,7 +595,7 @@ export default function DashboardPage() {
           />
         )}
         {/* Kept permanently mounted (hidden when inactive) so the AI chat
-            history survives switching to the VAEO/MESH tabs. */}
+            history survives switching to the panel tabs. */}
         {/* The AI assistant always sees the full (unfiltered) dataset — the
             date filter bar is hidden on this tab. */}
         <div className={cn(activeTab !== "conversations" && "hidden")}>

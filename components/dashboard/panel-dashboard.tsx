@@ -12,10 +12,8 @@ import type {
 } from "@/lib/types"
 import type { ResolvedDateRange } from "@/lib/date-range"
 import type { ActivityStatus } from "@/hooks/use-conversation-activity"
+import type { PanelId } from "@/lib/panel-scope"
 import { DashboardShell } from "./dashboard-ui"
-import { SalesPivotTable } from "./sales-pivot-table"
-import { SalesByDimensionChart } from "./sales-by-dimension-chart"
-import { LostByDimensionChart } from "./lost-by-dimension-chart"
 import { OpportunityStatusChart } from "./opportunity-status-chart"
 import { OpportunityWinRateChart } from "./opportunity-win-rate-chart"
 import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-chart"
@@ -27,18 +25,24 @@ import { LostReasonMatrix } from "./lost-reason-matrix"
 import { LostCrossMatrix } from "./lost-cross-matrix"
 
 /**
- * MESH — the second business line: the coworking brand under Grupo VAEO
- * (private offices, coworking floor, meeting rooms; Monterrey).
+ * El panel, una sola vez, para los siete alcances: GENERAL y los seis
+ * desarrollos.
  *
- * Same contract as the VAEO panel: charts were cleared to be rebuilt, but the
- * prop surface is kept so `app/page.tsx` keeps feeding the date-filtered
- * dataset plus the unfiltered `all*` lookup sets.
+ * Antes esto eran dos archivos gemelos (uno por línea de negocio) que solo
+ * diferían en un literal, con un comentario que pedía extraerlos "antes de que
+ * las dos listas diverjan". Con siete alcances la duplicación ya no era
+ * sostenible: `panel` es una prop y `lib/panel-scope.ts` decide qué embudo
+ * significa. Agregar un desarrollo es agregar una entrada en PANEL_SCOPES, no
+ * un archivo.
  *
- * Keep the filtered / `all*` pairing when you add drill-downs: charts read the
- * date-filtered arrays, joins resolve against the unfiltered ones (a record can
- * be created outside the window that puts its counterpart on screen).
+ * Conserva el emparejamiento filtradas / `all*` cuando agregues drill-downs: los
+ * gráficos leen los arreglos ya cortados por fecha, y los joins se resuelven
+ * contra los sin filtrar (un registro puede haberse creado fuera de la ventana
+ * que pone a su contraparte en pantalla).
  */
-export interface MeshDashboardProps {
+export interface PanelDashboardProps {
+  /** Qué alcance dibuja este panel. GENERAL no acota a ningún embudo. */
+  panel: PanelId
   opportunities: Opportunity[]
   /** Unfiltered opportunities — lookup table for drill-down joins. */
   allOpportunities?: Opportunity[]
@@ -53,9 +57,9 @@ export interface MeshDashboardProps {
   /** Tareas SIN filtrar por fecha — el rezago se mide contra hoy, no contra el periodo. */
   allTasks?: Task[]
   /**
-   * Oportunidades crudas: sin filtros de panel ni toggle de HubSpot. Solo para
-   * distinguir al contacto que NO tiene ninguna oportunidad del que sí tiene
-   * pero quedó fuera de un filtro. No la uses para agregar nada.
+   * Oportunidades crudas: sin los filtros de la barra. Solo para distinguir al
+   * contacto que NO tiene ninguna oportunidad del que sí tiene pero quedó fuera
+   * de un filtro. No la uses para agregar nada.
    */
   unfilteredOpportunities?: Opportunity[]
   /** Contacto → ISO del último mensaje saliente. Ausente = sin dato = cubeta más profunda. */
@@ -78,19 +82,18 @@ export interface MeshDashboardProps {
   periodLabel?: string
   /**
    * Resolved global date range. Charts that measure a date OTHER than createdAt
-   * (the pivot table measures the close date) filter the `all*` sets themselves
-   * instead of using the pre-filtered props.
+   * filter the `all*` sets themselves instead of using the pre-filtered props.
    */
   dateRange?: ResolvedDateRange | null
 }
 
-export function MeshDashboard({
+export function PanelDashboard({
+  panel,
   opportunities,
   contacts,
   allContacts = [],
   allOpportunities = [],
   pipelines = [],
-  dateRange = null,
   tasks = [],
   allTasks = [],
   unfilteredOpportunities = [],
@@ -102,11 +105,12 @@ export function MeshDashboard({
   appointments = [],
   messages = [],
   locationId,
-}: MeshDashboardProps) {
-  // Mismo bloque que en el panel VAEO, con el embudo cambiado: los dos paneles
-  // son los mismos gráficos sobre pipelines distintos.
+}: PanelDashboardProps) {
+  // Todo lo que los gráficos por-oportunidad necesitan es idéntico, así que se
+  // arma una sola vez y se derrama. Mantén ese patrón en vez de volver a listar
+  // props por gráfico.
   const shared = {
-    panel: "mesh" as const,
+    panel,
     opportunities,
     allOpportunities,
     contacts,
@@ -122,34 +126,10 @@ export function MeshDashboard({
 
   return (
     <DashboardShell>
-      <SalesPivotTable
-        panel="mesh"
-        allOpportunities={allOpportunities}
-        contacts={contacts}
-        allContacts={allContacts}
-        pipelines={pipelines}
-        dateRange={dateRange}
-        tasks={tasks}
-        calls={calls}
-        allPautas={allPautas}
-        appointments={appointments}
-        messages={messages}
-        locationId={locationId}
-      />
-      {/* Mismo par de charts que en VAEO: solo cambia el embudo y, con él, el
-          campo de sucursal ("Sucursal MESH"), que resuelve PANEL_SCOPES. Sus
-          totales cuadran con los de la tabla de arriba. */}
-      <div className="grid gap-5 lg:grid-cols-2">
-        <SalesByDimensionChart {...shared} dimension="sucursal" dateRange={dateRange} />
-        <SalesByDimensionChart {...shared} dimension="servicio" dateRange={dateRange} />
-      </div>
-      {/* El espejo de la de al lado: el mismo apilado por servicio, pero sobre
-          los leads que NO se ganaron y sobre el mes en que nos buscaron. El eje
-          tiene que ser el de creación —una perdida nunca tiene Fecha de Cierre—
-          y hoy su segmento gris domina, que es justo lo que la tarjeta reporta. */}
-      <LostByDimensionChart {...shared} dimension="servicio" />
       <OpportunityStatusChart {...shared} />
       <OpportunityWinRateChart {...shared} />
+      {/* De las oportunidades de DRT ~17% no tienen asesor asignado, así que
+          esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
       <AssignmentFunnelChart {...shared} />
       <AdvisorStageTable {...shared} />
       <StaleOpportunityMatrix
@@ -168,6 +148,8 @@ export function MeshDashboard({
         <CanalDeContactoChart {...shared} />
       </div>
       <LostReasonMatrix {...shared} />
+      {/* Las mismas perdidas, la otra pregunta: no por qué se cayeron sino por
+          dónde habían llegado. */}
       <LostCrossMatrix {...shared} />
     </DashboardShell>
   )
