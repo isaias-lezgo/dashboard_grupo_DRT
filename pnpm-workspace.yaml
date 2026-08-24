@@ -1,0 +1,6 @@
+allowBuilds:
+  sharp: true
+  # esbuild is pulled in by tsx (devDependency, runs the scripts/verify-*.ts and
+  # scripts/add-client.ts). Its postinstall links the platform-native binary, so
+  # without this pnpm 11 fails the install with ERR_PNPM_IGNORED_BUILDS.
+  esbuild: true

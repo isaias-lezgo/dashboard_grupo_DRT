@@ -1,0 +1,1211 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e52]:
+    - banner [ref=e53]:
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - img "Lezgo Suite" [ref=e56]
+          - generic [ref=e57]:
+            - heading "Lezgo Suite Analíticas" [level=1] [ref=e58]
+            - paragraph [ref=e59]: Marketing y Ventas
+        - generic [ref=e60]:
+          - generic [ref=e296]:
+            - generic [ref=e297]:
+              - img [ref=e298]
+              - text: 3,448
+            - generic [ref=e303]:
+              - img [ref=e304]
+              - text: "321"
+            - generic [ref=e308]:
+              - img [ref=e309]
+              - text: "920"
+          - button [ref=e312] [cursor=pointer]:
+            - img
+          - button "Cambiar tema" [ref=e63] [cursor=pointer]:
+            - img
+    - navigation "Vistas del panel" [ref=e64]:
+      - generic [ref=e65]:
+        - button "Marketing" [ref=e66] [cursor=pointer]:
+          - img [ref=e67]
+          - text: Marketing
+        - button "Ventas" [ref=e71] [cursor=pointer]:
+          - img [ref=e72]
+          - text: Ventas
+        - button "Asistente IA" [ref=e74] [cursor=pointer]:
+          - img [ref=e75]
+          - text: Asistente IA
+    - region "Filtro de fechas" [ref=e78]:
+      - generic [ref=e79]:
+        - generic [ref=e80]:
+          - img [ref=e81]
+          - generic [ref=e83]: Fecha
+        - group "Rango de fechas" [ref=e84]:
+          - button "Semana" [ref=e85] [cursor=pointer]
+          - button "Mes" [ref=e86] [cursor=pointer]
+          - button "3 meses" [ref=e87] [cursor=pointer]
+          - button "6 meses" [ref=e88] [cursor=pointer]
+          - button "Todo" [pressed] [ref=e89] [cursor=pointer]
+        - button "Personalizado" [ref=e90] [cursor=pointer]:
+          - text: Personalizado
+          - img
+    - generic [ref=e92]:
+      - button "Exportar reporte" [ref=e96] [cursor=pointer]:
+        - img
+        - text: Exportar reporte
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - paragraph [ref=e99]: Oportunidades
+          - paragraph [ref=e100]: "321"
+        - generic [ref=e101]:
+          - paragraph [ref=e102]: Oportunidades por pauta
+          - paragraph [ref=e103]: "183"
+        - generic [ref=e104]:
+          - paragraph [ref=e105]: Pautas
+          - paragraph [ref=e106]: "920"
+          - generic [ref=e107]:
+            - generic [ref=e108]: Leads únicos 854
+            - generic [ref=e109]: ·
+            - generic [ref=e110]: Reingresos 66
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - generic [ref=e113]:
+            - generic [ref=e114]:
+              - img [ref=e115]
+              - generic [ref=e118]: Oportunidades por fuente
+            - generic [ref=e119]:
+              - button [ref=e120] [cursor=pointer]:
+                - img [ref=e121]
+              - generic [ref=e123]: "Total: 321"
+          - generic [ref=e124]:
+            - generic [ref=e313]:
+              - generic [ref=e314]:
+                - img [ref=e317]:
+                  - generic [ref=e318]:
+                    - img [ref=e2168]
+                    - img [ref=e2170]
+                    - img [ref=e2172]
+                    - img [ref=e2174]
+                - generic:
+                  - generic: "321"
+                  - generic: LEADS
+              - generic [ref=e328]:
+                - generic [ref=e329] [cursor=pointer]:
+                  - generic [ref=e330]:
+                    - generic [ref=e331]:
+                      - img [ref=e332]
+                      - generic [ref=e334]: Facebook
+                    - generic [ref=e335]: 112 · 35%
+                  - generic [ref=e336]:
+                    - 'generic "Paid Social: 88" [ref=e337]'
+                    - 'generic "Social Media: 11" [ref=e338]'
+                    - 'generic "CRM UI: 11" [ref=e339]'
+                    - 'generic "Otro: 2" [ref=e340]'
+                  - generic [ref=e341]:
+                    - button "Paid Social 88" [ref=e342]: Paid Social 88
+                    - button "Social Media 11" [ref=e344]: Social Media 11
+                    - button "CRM UI 11" [ref=e346]: CRM UI 11
+                    - button "Otro 2" [ref=e348]: Otro 2
+                - generic [ref=e350] [cursor=pointer]:
+                  - generic [ref=e351]:
+                    - generic [ref=e352]:
+                      - img [ref=e353]
+                      - generic [ref=e356]: Instagram
+                    - generic [ref=e357]: 109 · 34%
+                  - generic [ref=e358]:
+                    - 'generic "Paid Social: 94" [ref=e359]'
+                    - 'generic "Social Media: 6" [ref=e360]'
+                    - 'generic "CRM UI: 5" [ref=e361]'
+                    - 'generic "Otro: 4" [ref=e362]'
+                  - generic [ref=e363]:
+                    - button "Paid Social 94" [ref=e364]: Paid Social 94
+                    - button "Social Media 6" [ref=e366]: Social Media 6
+                    - button "CRM UI 5" [ref=e368]: CRM UI 5
+                    - button "Otro 4" [ref=e370]: Otro 4
+                - generic [ref=e372] [cursor=pointer]:
+                  - generic [ref=e373]:
+                    - generic [ref=e374]:
+                      - img [ref=e375]
+                      - generic [ref=e378]: Otro
+                    - generic [ref=e379]: 99 · 31%
+                  - generic [ref=e380]:
+                    - 'generic "Social Media: 25" [ref=e381]'
+                    - 'generic "CRM UI: 55" [ref=e382]'
+                    - 'generic "Orgánico Web: 4" [ref=e383]'
+                    - 'generic "Otro: 15" [ref=e384]'
+                  - generic [ref=e385]:
+                    - button "Social Media 25" [ref=e386]: Social Media 25
+                    - button "CRM UI 55" [ref=e388]: CRM UI 55
+                    - button "Orgánico Web 4" [ref=e390]: Orgánico Web 4
+                    - button "Otro 15" [ref=e392]: Otro 15
+                - generic [ref=e394] [cursor=pointer]:
+                  - generic [ref=e395]:
+                    - generic [ref=e396]:
+                      - img [ref=e397]
+                      - generic [ref=e399]: TikTok
+                    - generic [ref=e400]: 1 · 0%
+                  - 'generic "Paid Social: 1" [ref=e402]'
+                  - button "Paid Social 1" [ref=e404]: Paid Social 1
+            - paragraph [ref=e126]: Haz clic en una fila para ver los leads
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - img [ref=e130]
+              - generic [ref=e133]: Pautas por canal de contacto
+            - generic [ref=e134]:
+              - generic [ref=e135]:
+                - button [ref=e136] [cursor=pointer]:
+                  - img [ref=e137]
+                - button "Leads únicos" [ref=e139] [cursor=pointer]: Leads únicos
+              - generic [ref=e142]: "Total: 920"
+          - generic [ref=e143]:
+            - generic [ref=e409]:
+              - img [ref=e410]:
+                - generic [ref=e416]: Mensaje WhatsApp
+                - generic [ref=e418]:
+                  - generic [ref=e420]: "0"
+                  - generic [ref=e422]: "250"
+                  - generic [ref=e424]: "500"
+                  - generic [ref=e426]: "750"
+                  - generic [ref=e428]: "1000"
+              - list [ref=e445]:
+                - listitem [ref=e446]:
+                  - img [ref=e447]
+                  - generic [ref=e449]: Instagram
+                - listitem [ref=e450]:
+                  - img [ref=e451]
+                  - generic [ref=e453]: Facebook
+                - listitem [ref=e454]:
+                  - img [ref=e455]
+                  - generic [ref=e457]: TikTok
+                - listitem [ref=e458]:
+                  - img [ref=e459]
+                  - generic [ref=e461]: Google
+                - listitem [ref=e462]:
+                  - img [ref=e463]
+                  - generic [ref=e465]: Otro
+            - paragraph [ref=e466]: Apilado por plataforma de origen del contacto · pautas · haz clic en un segmento para ver los contactos
+      - generic [ref=e145]:
+        - generic [ref=e146]:
+          - generic [ref=e147]:
+            - img [ref=e148]
+            - generic [ref=e150]: Pautas creadas por mes y reingresos
+          - generic [ref=e151]:
+            - button "Solo reingresos" [ref=e152] [cursor=pointer]: Solo reingresos
+            - generic [ref=e155]: "Reingresos: 66"
+            - generic [ref=e156]: "Total: 920"
+        - generic [ref=e157]:
+          - generic [ref=e470]:
+            - img [ref=e471]:
+              - generic [ref=e475]:
+                - generic [ref=e477]: ene 26
+                - generic [ref=e479]: feb 26
+                - generic [ref=e481]: mar 26
+                - generic [ref=e483]: abr 26
+                - generic [ref=e485]: may 26
+                - generic [ref=e487]: jun 26
+              - generic [ref=e489]:
+                - generic [ref=e491]: "0"
+                - generic [ref=e493]: "60"
+                - generic [ref=e495]: "120"
+                - generic [ref=e497]: "180"
+                - generic [ref=e499]: "240"
+            - list [ref=e547]:
+              - listitem [ref=e548]:
+                - img [ref=e549]
+                - generic [ref=e551]: Primer ingreso
+              - listitem [ref=e552]:
+                - img [ref=e553]
+                - generic [ref=e555]: Segundo reingreso
+              - listitem [ref=e556]:
+                - img [ref=e557]
+                - generic [ref=e559]: Tercer reingreso
+              - listitem [ref=e560]:
+                - img [ref=e561]
+                - generic [ref=e563]: Cuarto reingreso
+          - paragraph [ref=e564]: Apilado por número de reingreso del contacto · haz clic en un segmento para ver las pautas
+      - generic [ref=e159]:
+        - generic [ref=e160]:
+          - generic [ref=e161]:
+            - img [ref=e162]
+            - generic [ref=e166]: Oportunidades de Pauta por Etapa del Pipeline (Sin oportunidades perdidas)
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - generic [ref=e170]: Top 30
+                - slider [ref=e171] [cursor=pointer]: "30"
+              - generic [ref=e172]:
+                - button "URL" [ref=e173] [cursor=pointer]
+                - button "ID" [ref=e174] [cursor=pointer]
+                - button "Origen" [ref=e175] [cursor=pointer]
+            - generic [ref=e176]: "Total: 70"
+        - generic [ref=e177]:
+          - generic [ref=e568]:
+            - img [ref=e569]:
+              - generic [ref=e573]:
+                - generic [ref=e575]: Primera Cita
+                - generic [ref=e577]: Segunda Cita
+                - generic [ref=e579]: Proceso de Implementac…
+                - generic [ref=e581]: Cliente Activo
+                - generic [ref=e583]: Prospecto Perdido
+              - generic [ref=e587]: "60"
+            - list [ref=e755]:
+              - listitem [ref=e756]:
+                - img [ref=e757]
+                - generic [ref=e759]: IG - DWWkbODDICR
+              - listitem [ref=e760]:
+                - img [ref=e761]
+                - generic [ref=e763]: IG - DWWkbF_DCcr
+              - listitem [ref=e764]:
+                - img [ref=e765]
+                - generic [ref=e767]: IG - DXXrg4zDHaq
+              - listitem [ref=e768]:
+                - img [ref=e769]
+                - generic [ref=e771]: FB - 8hUST1iGz
+              - listitem [ref=e772]:
+                - img [ref=e773]
+                - generic [ref=e775]: AN1LKwpuOmHNHso08b8C
+              - listitem [ref=e776]:
+                - img [ref=e777]
+                - generic [ref=e779]: FB - 7hW4KGCnp
+              - listitem [ref=e780]:
+                - img [ref=e781]
+                - generic [ref=e783]: IG - DTvojMtDPwj
+              - listitem [ref=e784]:
+                - img [ref=e785]
+                - generic [ref=e787]: IG - DYpevEDDOz0
+              - listitem [ref=e788]:
+                - img [ref=e789]
+                - generic [ref=e791]: FB - 4bNho6085
+              - listitem [ref=e792]:
+                - img [ref=e793]
+                - generic [ref=e795]: FB - kd8M5Ipfc
+              - listitem [ref=e796]:
+                - img [ref=e797]
+                - generic [ref=e799]: IG - DYC5NCODOhX
+              - listitem [ref=e800]:
+                - img [ref=e801]
+                - generic [ref=e803]: bienvenida
+              - listitem [ref=e804]:
+                - img [ref=e805]
+                - generic [ref=e807]: IG - DXXrhH0DKvS
+              - listitem [ref=e808]:
+                - img [ref=e809]
+                - generic [ref=e811]: FB - 95sBzybAc
+              - listitem [ref=e812]:
+                - img [ref=e813]
+                - generic [ref=e815]: IG - DWWkcJdDH_V
+              - listitem [ref=e816]:
+                - img [ref=e817]
+                - generic [ref=e819]: FB - 5q71fFsU9
+              - listitem [ref=e820]:
+                - img [ref=e821]
+                - generic [ref=e823]: FB - 5BKbJyps4
+              - listitem [ref=e824]:
+                - img [ref=e825]
+                - generic [ref=e827]: IG - DQMs811jAR2
+              - listitem [ref=e828]:
+                - img [ref=e829]
+                - generic [ref=e831]: FB - 7zZh3odmD
+              - listitem [ref=e832]:
+                - img [ref=e833]
+                - generic [ref=e835]: FB - 5RqGwl1c5
+              - listitem [ref=e836]:
+                - img [ref=e837]
+                - generic [ref=e839]: FB - 9sj9ZvAAU
+              - listitem [ref=e840]:
+                - img [ref=e841]
+                - generic [ref=e843]: IG - DYC5Mr_jHM2
+              - listitem [ref=e844]:
+                - img [ref=e845]
+                - generic [ref=e847]: FB - 470j5yLoZ
+              - listitem [ref=e848]:
+                - img [ref=e849]
+                - generic [ref=e851]: FB - 5Yp1waRmJ
+              - listitem [ref=e852]:
+                - img [ref=e853]
+                - generic [ref=e855]: eyJhbGciOiJIUzI1NiJ9
+              - listitem [ref=e856]:
+                - img [ref=e857]
+                - generic [ref=e859]: WKp3n6e3KYFwGC7i8x8u
+              - listitem [ref=e860]:
+                - img [ref=e861]
+                - generic [ref=e863]: FB - 50VTfPQpR
+              - listitem [ref=e864]:
+                - img [ref=e865]
+                - generic [ref=e867]: IG - DTBTHbpDK51
+              - listitem [ref=e868]:
+                - img [ref=e869]
+                - generic [ref=e871]: IG - DQenMWCjJPT
+              - listitem [ref=e872]:
+                - img [ref=e873]
+                - generic [ref=e875]: impl-lezgosuitex3uvq
+          - paragraph [ref=e876]: Apilado por URL de atribución · top 30 · haz clic en un segmento para ver las oportunidades
+      - generic [ref=e179]:
+        - generic [ref=e180]:
+          - generic [ref=e181]:
+            - img [ref=e182]
+            - generic [ref=e185]: Oportunidades Perdidas por Razón de Pérdida
+          - generic [ref=e186]:
+            - generic [ref=e187]:
+              - generic [ref=e188]:
+                - generic [ref=e189]: Top 30
+                - slider [ref=e190] [cursor=pointer]: "30"
+              - generic [ref=e191]:
+                - button "URL" [ref=e192] [cursor=pointer]
+                - button "ID" [ref=e193] [cursor=pointer]
+                - button "Origen" [ref=e194] [cursor=pointer]
+            - generic [ref=e195]: "Total: 129"
+        - generic [ref=e196]:
+          - generic [ref=e880]:
+            - img [ref=e881]:
+              - generic [ref=e885]:
+                - generic [ref=e887]: Contrató a alguien más
+                - generic [ref=e889]: Falta de Respuesta
+                - generic [ref=e891]: No proveemos ese servi…
+                - generic [ref=e893]: No se adapta al Presup…
+                - generic [ref=e895]: Rechazó propuesta
+                - generic [ref=e897]: Sin razón
+              - generic [ref=e901]: "80"
+            - list [ref=e1107]:
+              - listitem [ref=e1108]:
+                - img [ref=e1109]
+                - generic [ref=e1111]: FB - bKk9Fkcbq
+              - listitem [ref=e1112]:
+                - img [ref=e1113]
+                - generic [ref=e1115]: IG - DQMs811jAR2
+              - listitem [ref=e1116]:
+                - img [ref=e1117]
+                - generic [ref=e1119]: FB - 5BKbJyps4
+              - listitem [ref=e1120]:
+                - img [ref=e1121]
+                - generic [ref=e1123]: FB - 78c7vCmBD
+              - listitem [ref=e1124]:
+                - img [ref=e1125]
+                - generic [ref=e1127]: FB - 5q71fFsU9
+              - listitem [ref=e1128]:
+                - img [ref=e1129]
+                - generic [ref=e1131]: IG - DTvojMtDPwj
+              - listitem [ref=e1132]:
+                - img [ref=e1133]
+                - generic [ref=e1135]: IG - DTBTHbpDK51
+              - listitem [ref=e1136]:
+                - img [ref=e1137]
+                - generic [ref=e1139]: IG - DQenMWCjJPT
+              - listitem [ref=e1140]:
+                - img [ref=e1141]
+                - generic [ref=e1143]: FB - 50VTfPQpR
+              - listitem [ref=e1144]:
+                - img [ref=e1145]
+                - generic [ref=e1147]: FB - hvOe5NCP3
+              - listitem [ref=e1148]:
+                - img [ref=e1149]
+                - generic [ref=e1151]: conocelezgosuite
+              - listitem [ref=e1152]:
+                - img [ref=e1153]
+                - generic [ref=e1155]: IG - DTvoi-7jLHZ
+              - listitem [ref=e1156]:
+                - img [ref=e1157]
+                - generic [ref=e1159]: FB - 5qXG4Nlmp
+              - listitem [ref=e1160]:
+                - img [ref=e1161]
+                - generic [ref=e1163]: FB - 9A00L4zXS
+              - listitem [ref=e1164]:
+                - img [ref=e1165]
+                - generic [ref=e1167]: onboarding-lezgosuit
+              - listitem [ref=e1168]:
+                - img [ref=e1169]
+                - generic [ref=e1171]: IG - DTBTGv6DDt-
+              - listitem [ref=e1172]:
+                - img [ref=e1173]
+                - generic [ref=e1175]: IG - DQenMFMjEy8
+              - listitem [ref=e1176]:
+                - img [ref=e1177]
+                - generic [ref=e1179]: IG - DTLebPFDLQq
+              - listitem [ref=e1180]:
+                - img [ref=e1181]
+                - generic [ref=e1183]: FB - 95eMkpfir
+              - listitem [ref=e1184]:
+                - img [ref=e1185]
+                - generic [ref=e1187]: IG - DTLea8mDOAV
+              - listitem [ref=e1188]:
+                - img [ref=e1189]
+                - generic [ref=e1191]: FB - 6wY4OIYAM
+              - listitem [ref=e1192]:
+                - img [ref=e1193]
+                - generic [ref=e1195]: IG - DQMs-BJDNKD
+              - listitem [ref=e1196]:
+                - img [ref=e1197]
+                - generic [ref=e1199]: IG - DYC_rn9DFFT
+              - listitem [ref=e1200]:
+                - img [ref=e1201]
+                - generic [ref=e1203]: FB - 95sBzybAc
+              - listitem [ref=e1204]:
+                - img [ref=e1205]
+                - generic [ref=e1207]: impl-lezgosuitex3uvq
+              - listitem [ref=e1208]:
+                - img [ref=e1209]
+                - generic [ref=e1211]: IG - DWWkbODDICR
+              - listitem [ref=e1212]:
+                - img [ref=e1213]
+                - generic [ref=e1215]: FB - 6uXdyAbBC
+              - listitem [ref=e1216]:
+                - img [ref=e1217]
+                - generic [ref=e1219]: eyJhbGciOiJIUzI1NiJ9
+              - listitem [ref=e1220]:
+                - img [ref=e1221]
+                - generic [ref=e1223]: eyJhbGciOiJIUzI1NiJ9
+              - listitem [ref=e1224]:
+                - img [ref=e1225]
+                - generic [ref=e1227]: FB - 43CWzCWuT
+          - paragraph [ref=e1228]: Apilado por URL de atribución · top 30 · haz clic en un segmento para ver las oportunidades
+      - generic [ref=e198]:
+        - generic [ref=e199]:
+          - generic [ref=e200]:
+            - generic [ref=e201]:
+              - img [ref=e202]
+              - generic [ref=e205]: Oportunidades por ID de Anuncio
+            - generic [ref=e207]: "Total: 185"
+          - generic [ref=e208]:
+            - table [ref=e1231]:
+              - rowgroup [ref=e1232]:
+                - 'row "ID # de oportunidades" [ref=e1233]':
+                  - columnheader "ID" [ref=e1234]
+                  - columnheader "# de oportunidades" [ref=e1235]
+              - rowgroup [ref=e1236]:
+                - row "120233804897980611 34" [ref=e1237] [cursor=pointer]:
+                  - cell "120233804897980611" [ref=e1238]:
+                    - generic [ref=e1239]:
+                      - text: "120233804897980611"
+                      - 'button "Copiar: 120233804897980611" [ref=e1240]':
+                        - img [ref=e1241]
+                  - cell "34" [ref=e1244]
+                - row "120233804897960611 30" [ref=e1245] [cursor=pointer]:
+                  - cell "120233804897960611" [ref=e1246]:
+                    - generic [ref=e1247]:
+                      - text: "120233804897960611"
+                      - 'button "Copiar: 120233804897960611" [ref=e1248]':
+                        - img [ref=e1249]
+                  - cell "30" [ref=e1252]
+                - row "120238306420290611 21" [ref=e1253] [cursor=pointer]:
+                  - cell "120238306420290611" [ref=e1254]:
+                    - generic [ref=e1255]:
+                      - text: "120238306420290611"
+                      - 'button "Copiar: 120238306420290611" [ref=e1256]':
+                        - img [ref=e1257]
+                  - cell "21" [ref=e1260]
+                - row "120241019311880611 19" [ref=e1261] [cursor=pointer]:
+                  - cell "120241019311880611" [ref=e1262]:
+                    - generic [ref=e1263]:
+                      - text: "120241019311880611"
+                      - 'button "Copiar: 120241019311880611" [ref=e1264]':
+                        - img [ref=e1265]
+                  - cell "19" [ref=e1268]
+                - row "120234160209220611 15" [ref=e1269] [cursor=pointer]:
+                  - cell "120234160209220611" [ref=e1270]:
+                    - generic [ref=e1271]:
+                      - text: "120234160209220611"
+                      - 'button "Copiar: 120234160209220611" [ref=e1272]':
+                        - img [ref=e1273]
+                  - cell "15" [ref=e1276]
+                - row "120234160209210611 14" [ref=e1277] [cursor=pointer]:
+                  - cell "120234160209210611" [ref=e1278]:
+                    - generic [ref=e1279]:
+                      - text: "120234160209210611"
+                      - 'button "Copiar: 120234160209210611" [ref=e1280]':
+                        - img [ref=e1281]
+                  - cell "14" [ref=e1284]
+                - row "120241019662550611 8" [ref=e1285] [cursor=pointer]:
+                  - cell "120241019662550611" [ref=e1286]:
+                    - generic [ref=e1287]:
+                      - text: "120241019662550611"
+                      - 'button "Copiar: 120241019662550611" [ref=e1288]':
+                        - img [ref=e1289]
+                  - cell "8" [ref=e1292]
+                - row "120242565138510611 7" [ref=e1293] [cursor=pointer]:
+                  - cell "120242565138510611" [ref=e1294]:
+                    - generic [ref=e1295]:
+                      - text: "120242565138510611"
+                      - 'button "Copiar: 120242565138510611" [ref=e1296]':
+                        - img [ref=e1297]
+                  - cell "7" [ref=e1300]
+                - row "120242565014710611 6" [ref=e1301] [cursor=pointer]:
+                  - cell "120242565014710611" [ref=e1302]:
+                    - generic [ref=e1303]:
+                      - text: "120242565014710611"
+                      - 'button "Copiar: 120242565014710611" [ref=e1304]':
+                        - img [ref=e1305]
+                  - cell "6" [ref=e1308]
+                - row "120238306420250611 6" [ref=e1309] [cursor=pointer]:
+                  - cell "120238306420250611" [ref=e1310]:
+                    - generic [ref=e1311]:
+                      - text: "120238306420250611"
+                      - 'button "Copiar: 120238306420250611" [ref=e1312]':
+                        - img [ref=e1313]
+                  - cell "6" [ref=e1316]
+                - row "120241019662560611 5" [ref=e1317] [cursor=pointer]:
+                  - cell "120241019662560611" [ref=e1318]:
+                    - generic [ref=e1319]:
+                      - text: "120241019662560611"
+                      - 'button "Copiar: 120241019662560611" [ref=e1320]':
+                        - img [ref=e1321]
+                  - cell "5" [ref=e1324]
+                - row "120243549316350611 4" [ref=e1325] [cursor=pointer]:
+                  - cell "120243549316350611" [ref=e1326]:
+                    - generic [ref=e1327]:
+                      - text: "120243549316350611"
+                      - 'button "Copiar: 120243549316350611" [ref=e1328]':
+                        - img [ref=e1329]
+                  - cell "4" [ref=e1332]
+                - row "120243545369230611 3" [ref=e1333] [cursor=pointer]:
+                  - cell "120243545369230611" [ref=e1334]:
+                    - generic [ref=e1335]:
+                      - text: "120243545369230611"
+                      - 'button "Copiar: 120243545369230611" [ref=e1336]':
+                        - img [ref=e1337]
+                  - cell "3" [ref=e1340]
+                - row "120236640673860611 2" [ref=e1341] [cursor=pointer]:
+                  - cell "120236640673860611" [ref=e1342]:
+                    - generic [ref=e1343]:
+                      - text: "120236640673860611"
+                      - 'button "Copiar: 120236640673860611" [ref=e1344]':
+                        - img [ref=e1345]
+                  - cell "2" [ref=e1348]
+                - row "120233696967270611 2" [ref=e1349] [cursor=pointer]:
+                  - cell "120233696967270611" [ref=e1350]:
+                    - generic [ref=e1351]:
+                      - text: "120233696967270611"
+                      - 'button "Copiar: 120233696967270611" [ref=e1352]':
+                        - img [ref=e1353]
+                  - cell "2" [ref=e1356]
+                - row "120237263123010611 2" [ref=e1357] [cursor=pointer]:
+                  - cell "120237263123010611" [ref=e1358]:
+                    - generic [ref=e1359]:
+                      - text: "120237263123010611"
+                      - 'button "Copiar: 120237263123010611" [ref=e1360]':
+                        - img [ref=e1361]
+                  - cell "2" [ref=e1364]
+                - row "120243549109650611 1" [ref=e1365] [cursor=pointer]:
+                  - cell "120243549109650611" [ref=e1366]:
+                    - generic [ref=e1367]:
+                      - text: "120243549109650611"
+                      - 'button "Copiar: 120243549109650611" [ref=e1368]':
+                        - img [ref=e1369]
+                  - cell "1" [ref=e1372]
+                - row "120241019311890611 1" [ref=e1373] [cursor=pointer]:
+                  - cell "120241019311890611" [ref=e1374]:
+                    - generic [ref=e1375]:
+                      - text: "120241019311890611"
+                      - 'button "Copiar: 120241019311890611" [ref=e1376]':
+                        - img [ref=e1377]
+                  - cell "1" [ref=e1380]
+                - row "1299140432127798 1" [ref=e1381] [cursor=pointer]:
+                  - cell "1299140432127798" [ref=e1382]:
+                    - generic [ref=e1383]:
+                      - text: "1299140432127798"
+                      - 'button "Copiar: 1299140432127798" [ref=e1384]':
+                        - img [ref=e1385]
+                  - cell "1" [ref=e1388]
+                - row "1135056188507754 1" [ref=e1389] [cursor=pointer]:
+                  - cell "1135056188507754" [ref=e1390]:
+                    - generic [ref=e1391]:
+                      - text: "1135056188507754"
+                      - 'button "Copiar: 1135056188507754" [ref=e1392]':
+                        - img [ref=e1393]
+                  - cell "1" [ref=e1396]
+                - row "120237265500420611 1" [ref=e1397] [cursor=pointer]:
+                  - cell "120237265500420611" [ref=e1398]:
+                    - generic [ref=e1399]:
+                      - text: "120237265500420611"
+                      - 'button "Copiar: 120237265500420611" [ref=e1400]':
+                        - img [ref=e1401]
+                  - cell "1" [ref=e1404]
+                - row "1835614737030427 1" [ref=e1405] [cursor=pointer]:
+                  - cell "1835614737030427" [ref=e1406]:
+                    - generic [ref=e1407]:
+                      - text: "1835614737030427"
+                      - 'button "Copiar: 1835614737030427" [ref=e1408]':
+                        - img [ref=e1409]
+                  - cell "1" [ref=e1412]
+                - row "120236446148030611 1" [ref=e1413] [cursor=pointer]:
+                  - cell "120236446148030611" [ref=e1414]:
+                    - generic [ref=e1415]:
+                      - text: "120236446148030611"
+                      - 'button "Copiar: 120236446148030611" [ref=e1416]':
+                        - img [ref=e1417]
+                  - cell "1" [ref=e1420]
+            - paragraph [ref=e1421]: Haz clic en una fila para ver las oportunidades
+        - generic [ref=e210]:
+          - generic [ref=e211]:
+            - generic [ref=e212]:
+              - img [ref=e213]
+              - generic [ref=e215]: Oportunidades por URL (Facebook / Instagram)
+            - generic [ref=e217]: "Total: 185"
+          - generic [ref=e218]:
+            - table [ref=e1424]:
+              - rowgroup [ref=e1425]:
+                - 'row "Facebook # Instagram #" [ref=e1426]':
+                  - columnheader "Facebook" [ref=e1427]:
+                    - generic [ref=e1428]:
+                      - img [ref=e1429]
+                      - text: Facebook
+                  - columnheader "#" [ref=e1431]
+                  - columnheader "Instagram" [ref=e1432]:
+                    - generic [ref=e1433]:
+                      - img [ref=e1434]
+                      - text: Instagram
+                  - columnheader "#" [ref=e1437]
+              - rowgroup [ref=e1438]:
+                - row "bKk9Fkcbq 16 DWWkbODDICR 17" [ref=e1439]:
+                  - cell "bKk9Fkcbq" [ref=e1440] [cursor=pointer]:
+                    - generic [ref=e1441]:
+                      - text: bKk9Fkcbq
+                      - link "https://fb.me/bKk9Fkcbq" [ref=e1442]:
+                        - /url: https://fb.me/bKk9Fkcbq
+                        - img [ref=e1443]
+                  - cell "16" [ref=e1447]
+                  - cell "DWWkbODDICR" [ref=e1448] [cursor=pointer]:
+                    - generic [ref=e1449]:
+                      - text: DWWkbODDICR
+                      - link "https://www.instagram.com/p/DWWkbODDICR/" [ref=e1450]:
+                        - /url: https://www.instagram.com/p/DWWkbODDICR/
+                        - img [ref=e1451]
+                  - cell "17" [ref=e1455]
+                - row "5BKbJyps4 11 DQMs811jAR2 15" [ref=e1456]:
+                  - cell "5BKbJyps4" [ref=e1457] [cursor=pointer]:
+                    - generic [ref=e1458]:
+                      - text: 5BKbJyps4
+                      - link "https://fb.me/5BKbJyps4" [ref=e1459]:
+                        - /url: https://fb.me/5BKbJyps4
+                        - img [ref=e1460]
+                  - cell "11" [ref=e1464]
+                  - cell "DQMs811jAR2" [ref=e1465] [cursor=pointer]:
+                    - generic [ref=e1466]:
+                      - text: DQMs811jAR2
+                      - link "https://www.instagram.com/p/DQMs811jAR2/" [ref=e1467]:
+                        - /url: https://www.instagram.com/p/DQMs811jAR2/
+                        - img [ref=e1468]
+                  - cell "15" [ref=e1472]
+                - row "5q71fFsU9 9 DTvojMtDPwj 10" [ref=e1473]:
+                  - cell "5q71fFsU9" [ref=e1474] [cursor=pointer]:
+                    - generic [ref=e1475]:
+                      - text: 5q71fFsU9
+                      - link "https://fb.me/5q71fFsU9" [ref=e1476]:
+                        - /url: https://fb.me/5q71fFsU9
+                        - img [ref=e1477]
+                  - cell "9" [ref=e1481]
+                  - cell "DTvojMtDPwj" [ref=e1482] [cursor=pointer]:
+                    - generic [ref=e1483]:
+                      - text: DTvojMtDPwj
+                      - link "https://www.instagram.com/p/DTvojMtDPwj/" [ref=e1484]:
+                        - /url: https://www.instagram.com/p/DTvojMtDPwj/
+                        - img [ref=e1485]
+                  - cell "10" [ref=e1489]
+                - row "78c7vCmBD 8 DTBTHbpDK51 8" [ref=e1490]:
+                  - cell "78c7vCmBD" [ref=e1491] [cursor=pointer]:
+                    - generic [ref=e1492]:
+                      - text: 78c7vCmBD
+                      - link "https://fb.me/78c7vCmBD" [ref=e1493]:
+                        - /url: https://fb.me/78c7vCmBD
+                        - img [ref=e1494]
+                  - cell "8" [ref=e1498]
+                  - cell "DTBTHbpDK51" [ref=e1499] [cursor=pointer]:
+                    - generic [ref=e1500]:
+                      - text: DTBTHbpDK51
+                      - link "https://www.instagram.com/p/DTBTHbpDK51/" [ref=e1501]:
+                        - /url: https://www.instagram.com/p/DTBTHbpDK51/
+                        - img [ref=e1502]
+                  - cell "8" [ref=e1506]
+                - row "50VTfPQpR 7 DQenMWCjJPT 7" [ref=e1507]:
+                  - cell "50VTfPQpR" [ref=e1508] [cursor=pointer]:
+                    - generic [ref=e1509]:
+                      - text: 50VTfPQpR
+                      - link "https://fb.me/50VTfPQpR" [ref=e1510]:
+                        - /url: https://fb.me/50VTfPQpR
+                        - img [ref=e1511]
+                  - cell "7" [ref=e1515]
+                  - cell "DQenMWCjJPT" [ref=e1516] [cursor=pointer]:
+                    - generic [ref=e1517]:
+                      - text: DQenMWCjJPT
+                      - link "https://www.instagram.com/p/DQenMWCjJPT/" [ref=e1518]:
+                        - /url: https://www.instagram.com/p/DQenMWCjJPT/
+                        - img [ref=e1519]
+                  - cell "7" [ref=e1523]
+                - row "hvOe5NCP3 5 DWWkbF_DCcr 5" [ref=e1524]:
+                  - cell "hvOe5NCP3" [ref=e1525] [cursor=pointer]:
+                    - generic [ref=e1526]:
+                      - text: hvOe5NCP3
+                      - link "https://fb.me/hvOe5NCP3" [ref=e1527]:
+                        - /url: https://fb.me/hvOe5NCP3
+                        - img [ref=e1528]
+                  - cell "5" [ref=e1532]
+                  - cell "DWWkbF_DCcr" [ref=e1533] [cursor=pointer]:
+                    - generic [ref=e1534]:
+                      - text: DWWkbF_DCcr
+                      - link "https://www.instagram.com/p/DWWkbF_DCcr/" [ref=e1535]:
+                        - /url: https://www.instagram.com/p/DWWkbF_DCcr/
+                        - img [ref=e1536]
+                  - cell "5" [ref=e1540]
+                - row "5qXG4Nlmp 4 DTvoi-7jLHZ 5" [ref=e1541]:
+                  - cell "5qXG4Nlmp" [ref=e1542] [cursor=pointer]:
+                    - generic [ref=e1543]:
+                      - text: 5qXG4Nlmp
+                      - link "https://fb.me/5qXG4Nlmp" [ref=e1544]:
+                        - /url: https://fb.me/5qXG4Nlmp
+                        - img [ref=e1545]
+                  - cell "4" [ref=e1549]
+                  - cell "DTvoi-7jLHZ" [ref=e1550] [cursor=pointer]:
+                    - generic [ref=e1551]:
+                      - text: DTvoi-7jLHZ
+                      - link "https://www.instagram.com/p/DTvoi-7jLHZ/" [ref=e1552]:
+                        - /url: https://www.instagram.com/p/DTvoi-7jLHZ/
+                        - img [ref=e1553]
+                  - cell "5" [ref=e1557]
+                - row "9A00L4zXS 4 DXXrg4zDHaq 3" [ref=e1558]:
+                  - cell "9A00L4zXS" [ref=e1559] [cursor=pointer]:
+                    - generic [ref=e1560]:
+                      - text: 9A00L4zXS
+                      - link "https://fb.me/9A00L4zXS" [ref=e1561]:
+                        - /url: https://fb.me/9A00L4zXS
+                        - img [ref=e1562]
+                  - cell "4" [ref=e1566]
+                  - cell "DXXrg4zDHaq" [ref=e1567] [cursor=pointer]:
+                    - generic [ref=e1568]:
+                      - text: DXXrg4zDHaq
+                      - link "https://www.instagram.com/p/DXXrg4zDHaq/" [ref=e1569]:
+                        - /url: https://www.instagram.com/p/DXXrg4zDHaq/
+                        - img [ref=e1570]
+                  - cell "3" [ref=e1574]
+                - row "8hUST1iGz 3 DTBTGv6DDt- 3" [ref=e1575]:
+                  - cell "8hUST1iGz" [ref=e1576] [cursor=pointer]:
+                    - generic [ref=e1577]:
+                      - text: 8hUST1iGz
+                      - link "https://fb.me/8hUST1iGz" [ref=e1578]:
+                        - /url: https://fb.me/8hUST1iGz
+                        - img [ref=e1579]
+                  - cell "3" [ref=e1583]
+                  - cell "DTBTGv6DDt-" [ref=e1584] [cursor=pointer]:
+                    - generic [ref=e1585]:
+                      - text: DTBTGv6DDt-
+                      - link "https://www.instagram.com/p/DTBTGv6DDt-/" [ref=e1586]:
+                        - /url: https://www.instagram.com/p/DTBTGv6DDt-/
+                        - img [ref=e1587]
+                  - cell "3" [ref=e1591]
+                - row "95sBzybAc 3 DQenMFMjEy8 3" [ref=e1592]:
+                  - cell "95sBzybAc" [ref=e1593] [cursor=pointer]:
+                    - generic [ref=e1594]:
+                      - text: 95sBzybAc
+                      - link "https://fb.me/95sBzybAc" [ref=e1595]:
+                        - /url: https://fb.me/95sBzybAc
+                        - img [ref=e1596]
+                  - cell "3" [ref=e1600]
+                  - cell "DQenMFMjEy8" [ref=e1601] [cursor=pointer]:
+                    - generic [ref=e1602]:
+                      - text: DQenMFMjEy8
+                      - link "https://www.instagram.com/p/DQenMFMjEy8/" [ref=e1603]:
+                        - /url: https://www.instagram.com/p/DQenMFMjEy8/
+                        - img [ref=e1604]
+                  - cell "3" [ref=e1608]
+                - row "7hW4KGCnp 3 DYpevEDDOz0 2" [ref=e1609]:
+                  - cell "7hW4KGCnp" [ref=e1610] [cursor=pointer]:
+                    - generic [ref=e1611]:
+                      - text: 7hW4KGCnp
+                      - link "https://fb.me/7hW4KGCnp" [ref=e1612]:
+                        - /url: https://fb.me/7hW4KGCnp
+                        - img [ref=e1613]
+                  - cell "3" [ref=e1617]
+                  - cell "DYpevEDDOz0" [ref=e1618] [cursor=pointer]:
+                    - generic [ref=e1619]:
+                      - text: DYpevEDDOz0
+                      - link "https://www.instagram.com/p/DYpevEDDOz0/" [ref=e1620]:
+                        - /url: https://www.instagram.com/p/DYpevEDDOz0/
+                        - img [ref=e1621]
+                  - cell "2" [ref=e1625]
+                - row "4bNho6085 2 DYC5NCODOhX 2" [ref=e1626]:
+                  - cell "4bNho6085" [ref=e1627] [cursor=pointer]:
+                    - generic [ref=e1628]:
+                      - text: 4bNho6085
+                      - link "https://fb.me/4bNho6085" [ref=e1629]:
+                        - /url: https://fb.me/4bNho6085
+                        - img [ref=e1630]
+                  - cell "2" [ref=e1634]
+                  - cell "DYC5NCODOhX" [ref=e1635] [cursor=pointer]:
+                    - generic [ref=e1636]:
+                      - text: DYC5NCODOhX
+                      - link "https://www.instagram.com/p/DYC5NCODOhX/" [ref=e1637]:
+                        - /url: https://www.instagram.com/p/DYC5NCODOhX/
+                        - img [ref=e1638]
+                  - cell "2" [ref=e1642]
+                - row "kd8M5Ipfc 2 DXXrhH0DKvS 2" [ref=e1643]:
+                  - cell "kd8M5Ipfc" [ref=e1644] [cursor=pointer]:
+                    - generic [ref=e1645]:
+                      - text: kd8M5Ipfc
+                      - link "https://fb.me/kd8M5Ipfc" [ref=e1646]:
+                        - /url: https://fb.me/kd8M5Ipfc
+                        - img [ref=e1647]
+                  - cell "2" [ref=e1651]
+                  - cell "DXXrhH0DKvS" [ref=e1652] [cursor=pointer]:
+                    - generic [ref=e1653]:
+                      - text: DXXrhH0DKvS
+                      - link "https://www.instagram.com/p/DXXrhH0DKvS/" [ref=e1654]:
+                        - /url: https://www.instagram.com/p/DXXrhH0DKvS/
+                        - img [ref=e1655]
+                  - cell "2" [ref=e1659]
+                - row "95eMkpfir 2 DWWkcJdDH_V 2" [ref=e1660]:
+                  - cell "95eMkpfir" [ref=e1661] [cursor=pointer]:
+                    - generic [ref=e1662]:
+                      - text: 95eMkpfir
+                      - link "https://fb.me/95eMkpfir" [ref=e1663]:
+                        - /url: https://fb.me/95eMkpfir
+                        - img [ref=e1664]
+                  - cell "2" [ref=e1668]
+                  - cell "DWWkcJdDH_V" [ref=e1669] [cursor=pointer]:
+                    - generic [ref=e1670]:
+                      - text: DWWkcJdDH_V
+                      - link "https://www.instagram.com/p/DWWkcJdDH_V/" [ref=e1671]:
+                        - /url: https://www.instagram.com/p/DWWkcJdDH_V/
+                        - img [ref=e1672]
+                  - cell "2" [ref=e1676]
+                - row "6wY4OIYAM 2 DTLebPFDLQq 2" [ref=e1677]:
+                  - cell "6wY4OIYAM" [ref=e1678] [cursor=pointer]:
+                    - generic [ref=e1679]:
+                      - text: 6wY4OIYAM
+                      - link "https://fb.me/6wY4OIYAM" [ref=e1680]:
+                        - /url: https://fb.me/6wY4OIYAM
+                        - img [ref=e1681]
+                  - cell "2" [ref=e1685]
+                  - cell "DTLebPFDLQq" [ref=e1686] [cursor=pointer]:
+                    - generic [ref=e1687]:
+                      - text: DTLebPFDLQq
+                      - link "https://www.instagram.com/p/DTLebPFDLQq/" [ref=e1688]:
+                        - /url: https://www.instagram.com/p/DTLebPFDLQq/
+                        - img [ref=e1689]
+                  - cell "2" [ref=e1693]
+                - row "7zZh3odmD 1 DTLea8mDOAV 2" [ref=e1694]:
+                  - cell "7zZh3odmD" [ref=e1695] [cursor=pointer]:
+                    - generic [ref=e1696]:
+                      - text: 7zZh3odmD
+                      - link "https://fb.me/7zZh3odmD" [ref=e1697]:
+                        - /url: https://fb.me/7zZh3odmD
+                        - img [ref=e1698]
+                  - cell "1" [ref=e1702]
+                  - cell "DTLea8mDOAV" [ref=e1703] [cursor=pointer]:
+                    - generic [ref=e1704]:
+                      - text: DTLea8mDOAV
+                      - link "https://www.instagram.com/p/DTLea8mDOAV/" [ref=e1705]:
+                        - /url: https://www.instagram.com/p/DTLea8mDOAV/
+                        - img [ref=e1706]
+                  - cell "2" [ref=e1710]
+                - row "5RqGwl1c5 1 DQMs-BJDNKD 2" [ref=e1711]:
+                  - cell "5RqGwl1c5" [ref=e1712] [cursor=pointer]:
+                    - generic [ref=e1713]:
+                      - text: 5RqGwl1c5
+                      - link "https://fb.me/5RqGwl1c5" [ref=e1714]:
+                        - /url: https://fb.me/5RqGwl1c5
+                        - img [ref=e1715]
+                  - cell "1" [ref=e1719]
+                  - cell "DQMs-BJDNKD" [ref=e1720] [cursor=pointer]:
+                    - generic [ref=e1721]:
+                      - text: DQMs-BJDNKD
+                      - link "https://www.instagram.com/p/DQMs-BJDNKD/" [ref=e1722]:
+                        - /url: https://www.instagram.com/p/DQMs-BJDNKD/
+                        - img [ref=e1723]
+                  - cell "2" [ref=e1727]
+                - row "9sj9ZvAAU 1 DYC5Mr_jHM2 1" [ref=e1728]:
+                  - cell "9sj9ZvAAU" [ref=e1729] [cursor=pointer]:
+                    - generic [ref=e1730]:
+                      - text: 9sj9ZvAAU
+                      - link "https://fb.me/9sj9ZvAAU" [ref=e1731]:
+                        - /url: https://fb.me/9sj9ZvAAU
+                        - img [ref=e1732]
+                  - cell "1" [ref=e1736]
+                  - cell "DYC5Mr_jHM2" [ref=e1737] [cursor=pointer]:
+                    - generic [ref=e1738]:
+                      - text: DYC5Mr_jHM2
+                      - link "https://www.instagram.com/p/DYC5Mr_jHM2/" [ref=e1739]:
+                        - /url: https://www.instagram.com/p/DYC5Mr_jHM2/
+                        - img [ref=e1740]
+                  - cell "1" [ref=e1744]
+                - row "470j5yLoZ 1 DYC_rn9DFFT 1" [ref=e1745]:
+                  - cell "470j5yLoZ" [ref=e1746] [cursor=pointer]:
+                    - generic [ref=e1747]:
+                      - text: 470j5yLoZ
+                      - link "https://fb.me/470j5yLoZ" [ref=e1748]:
+                        - /url: https://fb.me/470j5yLoZ
+                        - img [ref=e1749]
+                  - cell "1" [ref=e1753]
+                  - cell "DYC_rn9DFFT" [ref=e1754] [cursor=pointer]:
+                    - generic [ref=e1755]:
+                      - text: DYC_rn9DFFT
+                      - link "https://www.instagram.com/p/DYC_rn9DFFT/" [ref=e1756]:
+                        - /url: https://www.instagram.com/p/DYC_rn9DFFT/
+                        - img [ref=e1757]
+                  - cell "1" [ref=e1761]
+                - row "5Yp1waRmJ 1 DSBGxa_DNbX 1" [ref=e1762]:
+                  - cell "5Yp1waRmJ" [ref=e1763] [cursor=pointer]:
+                    - generic [ref=e1764]:
+                      - text: 5Yp1waRmJ
+                      - link "https://fb.me/5Yp1waRmJ" [ref=e1765]:
+                        - /url: https://fb.me/5Yp1waRmJ
+                        - img [ref=e1766]
+                  - cell "1" [ref=e1770]
+                  - cell "DSBGxa_DNbX" [ref=e1771] [cursor=pointer]:
+                    - generic [ref=e1772]:
+                      - text: DSBGxa_DNbX
+                      - link "https://www.instagram.com/p/DSBGxa_DNbX/" [ref=e1773]:
+                        - /url: https://www.instagram.com/p/DSBGxa_DNbX/
+                        - img [ref=e1774]
+                  - cell "1" [ref=e1778]
+                - row "6uXdyAbBC 1" [ref=e1779]:
+                  - cell "6uXdyAbBC" [ref=e1780] [cursor=pointer]:
+                    - generic [ref=e1781]:
+                      - text: 6uXdyAbBC
+                      - link "https://fb.me/6uXdyAbBC" [ref=e1782]:
+                        - /url: https://fb.me/6uXdyAbBC
+                        - img [ref=e1783]
+                  - cell "1" [ref=e1787]
+                  - cell [ref=e1788]
+                  - cell [ref=e1789]
+                - row "43CWzCWuT 1" [ref=e1790]:
+                  - cell "43CWzCWuT" [ref=e1791] [cursor=pointer]:
+                    - generic [ref=e1792]:
+                      - text: 43CWzCWuT
+                      - link "https://fb.me/43CWzCWuT" [ref=e1793]:
+                        - /url: https://fb.me/43CWzCWuT
+                        - img [ref=e1794]
+                  - cell "1" [ref=e1798]
+                  - cell [ref=e1799]
+                  - cell [ref=e1800]
+                - row "8B2QU3RE9 1" [ref=e1801]:
+                  - cell "8B2QU3RE9" [ref=e1802] [cursor=pointer]:
+                    - generic [ref=e1803]:
+                      - text: 8B2QU3RE9
+                      - link "https://fb.me/8B2QU3RE9" [ref=e1804]:
+                        - /url: https://fb.me/8B2QU3RE9
+                        - img [ref=e1805]
+                  - cell "1" [ref=e1809]
+                  - cell [ref=e1810]
+                  - cell [ref=e1811]
+                - row "6cKJw6w7L 1" [ref=e1812]:
+                  - cell "6cKJw6w7L" [ref=e1813] [cursor=pointer]:
+                    - generic [ref=e1814]:
+                      - text: 6cKJw6w7L
+                      - link "https://fb.me/6cKJw6w7L" [ref=e1815]:
+                        - /url: https://fb.me/6cKJw6w7L
+                        - img [ref=e1816]
+                  - cell "1" [ref=e1820]
+                  - cell [ref=e1821]
+                  - cell [ref=e1822]
+                - row "3q8d9UycP 1" [ref=e1823]:
+                  - cell "3q8d9UycP" [ref=e1824] [cursor=pointer]:
+                    - generic [ref=e1825]:
+                      - text: 3q8d9UycP
+                      - link "https://fb.me/3q8d9UycP" [ref=e1826]:
+                        - /url: https://fb.me/3q8d9UycP
+                        - img [ref=e1827]
+                  - cell "1" [ref=e1831]
+                  - cell [ref=e1832]
+                  - cell [ref=e1833]
+                - row "5yJ8tZg6L 1" [ref=e1834]:
+                  - cell "5yJ8tZg6L" [ref=e1835] [cursor=pointer]:
+                    - generic [ref=e1836]:
+                      - text: 5yJ8tZg6L
+                      - link "https://fb.me/5yJ8tZg6L" [ref=e1837]:
+                        - /url: https://fb.me/5yJ8tZg6L
+                        - img [ref=e1838]
+                  - cell "1" [ref=e1842]
+                  - cell [ref=e1843]
+                  - cell [ref=e1844]
+            - paragraph [ref=e1845]: Haz clic en una URL para ver las oportunidades
+      - generic [ref=e221]:
+        - generic [ref=e222]:
+          - generic [ref=e223]:
+            - img [ref=e224]
+            - generic [ref=e226]: Citas por pauta
+          - generic [ref=e227]:
+            - generic [ref=e228]:
+              - combobox [ref=e1846] [cursor=pointer]:
+                - generic: Todos los estatus
+                - img [ref=e1847]
+              - generic [ref=e229]:
+                - generic [ref=e230]: Todo
+                - slider [ref=e231] [cursor=pointer]: "23"
+              - generic [ref=e232]:
+                - button "URL" [ref=e233] [cursor=pointer]
+                - button "ID" [ref=e234] [cursor=pointer]
+                - button "Origen" [ref=e235] [cursor=pointer]
+            - generic [ref=e236]: "Total: 57"
+        - generic [ref=e237]:
+          - img [ref=e1853]:
+            - generic [ref=e1857]:
+              - generic [ref=e1859]: IG - DWWkbODDICR
+              - generic [ref=e1861]: IG - DWWkbF_DCcr
+              - generic [ref=e1863]: IG - DXXrg4zDHaq
+              - generic [ref=e1865]: FB - 8hUST1iGz
+              - generic [ref=e1867]: FB - 95sBzybAc
+              - generic [ref=e1869]: FB - 7hW4KGCnp
+              - generic [ref=e1871]: IG - DYpevEDDOz0
+              - generic [ref=e1873]: FB - 4bNho6085
+              - generic [ref=e1875]: FB - kd8M5Ipfc
+              - generic [ref=e1877]: IG - DYC5NCODOhX
+              - generic [ref=e1879]: IG - DXXrhH0DKvS
+              - generic [ref=e1881]: IG - DWWkcJdDH_V
+              - generic [ref=e1883]: FB - 7zZh3odmD
+              - generic [ref=e1885]: FB - 5RqGwl1c5
+              - generic [ref=e1887]: FB - 9sj9ZvAAU
+              - generic [ref=e1889]: IG - DYC5Mr_jHM2
+              - generic [ref=e1891]: bienvenida
+              - generic [ref=e1893]: IG - DYC_rn9DFFT
+              - generic [ref=e1895]: FB - 470j5yLoZ
+              - generic [ref=e1897]: FB - 5Yp1waRmJ
+              - generic [ref=e1899]: FB - 5q71fFsU9
+              - generic [ref=e1901]: IG - DQMs811jAR2
+              - generic [ref=e1903]: IG - DTvoi-7jLHZ
+            - generic [ref=e1905]:
+              - generic [ref=e1907]: "0"
+              - generic [ref=e1909]: "5"
+              - generic [ref=e1911]: "10"
+              - generic [ref=e1913]: "15"
+              - generic [ref=e1915]: "20"
+          - paragraph [ref=e1965]: Leads de paid social + paid search que tienen al menos una cita agendada
+      - generic [ref=e239]:
+        - generic [ref=e240]:
+          - generic [ref=e241]:
+            - generic [ref=e242]:
+              - img [ref=e243]
+              - generic [ref=e246]: Oportunidades ganadas por pauta
+            - generic [ref=e247]:
+              - generic [ref=e248]:
+                - generic [ref=e249]:
+                  - generic [ref=e250]: Todo
+                  - slider [ref=e251] [cursor=pointer]: "6"
+                - generic [ref=e252]:
+                  - button "URL" [ref=e253] [cursor=pointer]
+                  - button "ID" [ref=e254] [cursor=pointer]
+                  - button "Origen" [ref=e255] [cursor=pointer]
+              - generic [ref=e256]: "Total: 8"
+          - generic [ref=e257]:
+            - img [ref=e1970]:
+              - generic [ref=e1974]:
+                - generic [ref=e1976]: FB - 5q71fFsU9
+                - generic [ref=e1978]: IG - DQMs811jAR2
+                - generic [ref=e1980]: bienvenida
+                - generic [ref=e1982]: FB - 8hUST1iGz
+                - generic [ref=e1984]: IG - DTBTHbpDK51
+                - generic [ref=e1986]: FB - bKk9Fkcbq
+              - generic [ref=e1988]:
+                - generic [ref=e1990]: "0"
+                - generic [ref=e1992]: "1"
+                - generic [ref=e1994]: "2"
+                - generic [ref=e1996]: "3"
+                - generic [ref=e1998]: "4"
+            - paragraph [ref=e2014]: Oportunidades ganadas (won) de paid social + paid search · tooltip muestra valor total
+        - generic [ref=e259]:
+          - generic [ref=e260]:
+            - generic [ref=e261]:
+              - img [ref=e262]
+              - generic [ref=e265]: Oportunidades Ganadas por Fuente
+            - generic [ref=e266]:
+              - button [ref=e267] [cursor=pointer]:
+                - img [ref=e268]
+              - generic [ref=e270]: "Total: 38"
+          - generic [ref=e271]:
+            - generic [ref=e2018]:
+              - img [ref=e2019]:
+                - generic [ref=e2023]:
+                  - generic [ref=e2025]: Instagram
+                  - generic [ref=e2027]: Facebook
+                  - generic [ref=e2029]: TikTok
+                  - generic [ref=e2031]: Google
+                  - generic [ref=e2033]: Otro
+                - generic [ref=e2035]:
+                  - generic [ref=e2037]: "0"
+                  - generic [ref=e2039]: "7"
+                  - generic [ref=e2041]: "14"
+                  - generic [ref=e2043]: "21"
+                  - generic [ref=e2045]: "28"
+              - list [ref=e2080]:
+                - listitem [ref=e2081]:
+                  - img [ref=e2082]
+                  - generic [ref=e2084]: Paid Social
+                - listitem [ref=e2085]:
+                  - img [ref=e2086]
+                  - generic [ref=e2088]: Paid Search
+                - listitem [ref=e2089]:
+                  - img [ref=e2090]
+                  - generic [ref=e2092]: Social Media
+                - listitem [ref=e2093]:
+                  - img [ref=e2094]
+                  - generic [ref=e2096]: CRM UI
+                - listitem [ref=e2097]:
+                  - img [ref=e2098]
+                  - generic [ref=e2100]: Orgánico Web
+                - listitem [ref=e2101]:
+                  - img [ref=e2102]
+                  - generic [ref=e2104]: Otro
+            - paragraph [ref=e2105]: Oportunidades ganadas · barras por plataforma de origen, apiladas por fuente de creación · haz clic en un segmento para ver los detalles
+      - generic [ref=e273]:
+        - generic [ref=e274]:
+          - generic [ref=e275]:
+            - img [ref=e276]
+            - generic [ref=e278]: Rendimiento por origen
+          - generic [ref=e279]:
+            - generic [ref=e280]:
+              - button "Origen" [ref=e281] [cursor=pointer]
+              - button "ID" [ref=e282] [cursor=pointer]
+              - button "URL" [ref=e283] [cursor=pointer]
+            - generic [ref=e284]: "Total: 38"
+        - generic [ref=e285]:
+          - table [ref=e2108]:
+            - rowgroup [ref=e2109]:
+              - row "Plataforma Leads Ganados % Cierre Valor Ticket prom." [ref=e2110]:
+                - columnheader "Plataforma" [ref=e2111]
+                - columnheader "Leads" [ref=e2112]
+                - columnheader "Ganados" [ref=e2113]
+                - columnheader "% Cierre" [ref=e2114]
+                - columnheader "Valor" [ref=e2115]
+                - columnheader "Ticket prom." [ref=e2116]
+            - rowgroup [ref=e2117]:
+              - row "Otro 99 26 26.3% $155,906.5 $5,996" [ref=e2118] [cursor=pointer]:
+                - cell "Otro" [ref=e2119]:
+                  - generic [ref=e2120]:
+                    - img [ref=e2121]
+                    - generic [ref=e2124]: Otro
+                - cell "99" [ref=e2125]
+                - cell "26" [ref=e2126]
+                - cell "26.3%" [ref=e2127]
+                - cell "$155,906.5" [ref=e2128]
+                - cell "$5,996" [ref=e2129]
+              - row "Instagram 109 6 5.5% $34,043.31 $5,674" [ref=e2130] [cursor=pointer]:
+                - cell "Instagram" [ref=e2131]:
+                  - generic [ref=e2132]:
+                    - img [ref=e2133]
+                    - generic [ref=e2136]: Instagram
+                - cell "109" [ref=e2137]
+                - cell "6" [ref=e2138]
+                - cell "5.5%" [ref=e2139]
+                - cell "$34,043.31" [ref=e2140]
+                - cell "$5,674" [ref=e2141]
+              - row "Facebook 112 5 4.5% $21,218.58 $4,244" [ref=e2142] [cursor=pointer]:
+                - cell "Facebook" [ref=e2143]:
+                  - generic [ref=e2144]:
+                    - img [ref=e2145]
+                    - generic [ref=e2147]: Facebook
+                - cell "112" [ref=e2148]
+                - cell "5" [ref=e2149]
+                - cell "4.5%" [ref=e2150]
+                - cell "$21,218.58" [ref=e2151]
+                - cell "$4,244" [ref=e2152]
+              - row "TikTok 1 1 100.0% $3,273.06 $3,273" [ref=e2153] [cursor=pointer]:
+                - cell "TikTok" [ref=e2154]:
+                  - generic [ref=e2155]:
+                    - img [ref=e2156]
+                    - generic [ref=e2158]: TikTok
+                - cell "1" [ref=e2159]
+                - cell "1" [ref=e2160]
+                - cell "100.0%" [ref=e2161]
+                - cell "$3,273.06" [ref=e2162]
+                - cell "$3,273" [ref=e2163]
+          - paragraph [ref=e2164]: Todas las oportunidades clasificadas por plataforma de origen · Leads abre todos los leads · Ganados / % Cierre / Valor abre solo los ganados
+  - button "Open Next.js Dev Tools" [ref=e292] [cursor=pointer]:
+    - img [ref=e293]
+  - alert [ref=e2165]
+  - generic [ref=e2166]: "7"

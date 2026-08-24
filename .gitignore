@@ -1,0 +1,24 @@
+# v0 runtime files (should only exist in preview, not in git)
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+instrumentation-client.js
+instrumentation-client.ts
+
+# Common ignores
+node_modules/
+.next/
+.DS_Store
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# MCP config (contains hardcoded API tokens)
+.mcp.json
+# Playwright MCP debug artifacts
+.playwright-mcp/
+.superpowers/
+.vercel
+.env*

@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e52]:
+    - banner [ref=e53]:
+      - generic [ref=e54]
+    - navigation "Vistas del panel" [ref=e64]:
+      - generic [ref=e65]
+    - region "Filtro de fechas" [ref=e78]:
+      - generic [ref=e79]
+    - generic [ref=e92]:
+      - button "Exportar reporte" [ref=e96] [cursor=pointer]
+      - generic [ref=e97]
+      - generic [ref=e111]
+      - generic [ref=e145]
+      - generic [ref=e159]
+      - generic [ref=e179]
+      - generic [ref=e198]
+      - generic [ref=e221]
+      - generic [ref=e239]
+      - generic [ref=e273]
+  - button "Open Next.js Dev Tools" [ref=e292] [cursor=pointer]:
+    - img [ref=e293]
+  - alert [ref=e2165]
+  - generic [ref=e2166]: "7"

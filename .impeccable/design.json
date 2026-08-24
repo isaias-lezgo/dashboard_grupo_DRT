@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-24T00:00:00.000Z",
+  "title": "Design System: GHL CRM Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "brand-amber": {
+        "role": "primary",
+        "displayName": "Brand Amber",
+        "canonical": "oklch(73% 0.165 67)",
+        "tonalRamp": ["#2C1A00", "#4A2E00", "#6B4200", "#8F5900", "#B37100", "#D4890A", "#F59B1B", "#FAC96A", "#FDF3E0"]
+      },
+      "structural-navy": {
+        "role": "secondary",
+        "displayName": "Structural Navy",
+        "canonical": "oklch(38% 0.063 240)",
+        "tonalRamp": ["#0D1520", "#18253A", "#243857", "#335577", "#4A6A8A", "#7A9BB5", "#B5CCDB", "#E4EDF4"]
+      },
+      "cool-slate-bg": {
+        "role": "neutral",
+        "displayName": "Cool Slate Background",
+        "canonical": "oklch(96% 0.008 240)",
+        "tonalRamp": ["#1A1E24", "#2C3340", "#3F4A5C", "#5A6A7E", "#7D8FA3", "#AABBC8", "#CDD9E3", "#F2F4F7"]
+      },
+      "surface-white": {
+        "role": "neutral",
+        "displayName": "Surface White",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": ["#1A1A1A", "#333333", "#4D4D4D", "#666666", "#808080", "#B3B3B3", "#CCCCCC", "#FFFFFF"]
+      },
+      "ink-navy": {
+        "role": "neutral",
+        "displayName": "Ink Navy",
+        "canonical": "oklch(15% 0.025 240)",
+        "tonalRamp": ["#0A0D12", "#151B28", "#242F42", "#3A4F6B", "#5A728E", "#8FA6BC", "#C3D3DE", "#EEF3F7"]
+      },
+      "muted-steel": {
+        "role": "neutral",
+        "displayName": "Muted Steel",
+        "canonical": "oklch(92% 0.010 240)",
+        "tonalRamp": ["#1E2430", "#2E3A4C", "#405060", "#5A6E84", "#7D95AC", "#AABCCB", "#CDD8E2", "#EAEDF1"]
+      },
+      "subtle-border": {
+        "role": "neutral",
+        "displayName": "Subtle Border",
+        "canonical": "oklch(88% 0.012 240)",
+        "tonalRamp": ["#1C2230", "#2C3648", "#3E4E62", "#5A6C82", "#7D92A8", "#AABDCC", "#C8D6E0", "#DBE0E5"]
+      },
+      "danger-red": {
+        "role": "semantic-danger",
+        "displayName": "Danger Red",
+        "canonical": "oklch(50% 0.22 27)",
+        "tonalRamp": ["#1A0000", "#3D0A0A", "#6B1515", "#991B1B", "#B91C1C", "#DC2626", "#F87171", "#FEE2E2"]
+      }
+    },
+    "shadows": [
+      {
+        "name": "hover-lift",
+        "value": "0 1px 3px rgba(21, 27, 40, 0.08), 0 1px 2px rgba(21, 27, 40, 0.06)",
+        "purpose": "Cards and interactive panels on hover. Signals response to user intent without implying permanent elevation."
+      },
+      {
+        "name": "floating-layer",
+        "value": "0 4px 16px rgba(21, 27, 40, 0.12), 0 2px 6px rgba(21, 27, 40, 0.08)",
+        "purpose": "Dropdowns, tooltips, drill drawers, and any panel that floats above the content surface."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-state",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for state transitions: hover, focus, active. Ease-out-expo. 150ms for micro-interactions, 200ms for panel reveals."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary action. Brand amber fill, white text. Used for save, confirm, and submit actions.",
+      "html": "<button class=\"ds-btn-primary\">Guardar</button>",
+      "css": ".ds-btn-primary { background: #F59B1B; color: #ffffff; border: none; border-radius: 10px; padding: 8px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 0.15s cubic-bezier(0.16,1,0.3,1); } .ds-btn-primary:hover { background: #D9870F; } .ds-btn-primary:focus-visible { outline: 2px solid #F59B1B; outline-offset: 2px; } .ds-btn-primary:active { background: #C07800; transform: translateY(1px); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action. No fill, navy border. Used for cancel, back, and secondary confirmations.",
+      "html": "<button class=\"ds-btn-ghost\">Cancelar</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: #335577; border: 1px solid rgba(51, 85, 119, 0.35); border-radius: 10px; padding: 8px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.15s cubic-bezier(0.16,1,0.3,1); } .ds-btn-ghost:hover { background: #EAEDF1; } .ds-btn-ghost:focus-visible { outline: 2px solid #F59B1B; outline-offset: 2px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Primary layout unit for chart panels and data summaries. White surface on cool-slate background.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><span class=\"ds-card-title\">Oportunidades por fuente</span><span class=\"ds-total-badge\">Total: 342</span></div><div class=\"ds-card-content\">Chart content here</div></div>",
+      "css": ".ds-card { background: #ffffff; border: 1px solid #DBE0E5; border-radius: 12px; overflow: hidden; transition: box-shadow 0.15s cubic-bezier(0.16,1,0.3,1); } .ds-card:hover { box-shadow: 0 1px 3px rgba(21,27,40,0.08), 0 1px 2px rgba(21,27,40,0.06); } .ds-card-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; } .ds-card-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; font-weight: 600; color: #151B28; } .ds-card-content { padding: 0 16px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; color: #151B28; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard text input. Flat at rest, amber ring on focus.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Buscar...\" />",
+      "css": ".ds-input { background: #ffffff; border: 1px solid #DBE0E5; border-radius: 10px; padding: 8px 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; color: #151B28; outline: none; width: 200px; transition: border-color 0.15s cubic-bezier(0.16,1,0.3,1), box-shadow 0.15s cubic-bezier(0.16,1,0.3,1); } .ds-input::placeholder { color: #8A9BAD; } .ds-input:focus { border-color: #F59B1B; box-shadow: 0 0 0 3px rgba(245, 155, 27, 0.18); }"
+    },
+    {
+      "name": "Tab Navigation",
+      "kind": "nav",
+      "refersTo": "tab-nav",
+      "description": "Top-level Marketing / Sales switcher. Amber underline marks the active tab. Sits directly on the cool-slate background.",
+      "html": "<nav class=\"ds-tab-nav\"><button class=\"ds-tab ds-tab-active\">Marketing</button><button class=\"ds-tab\">Ventas</button></nav>",
+      "css": ".ds-tab-nav { display: flex; border-bottom: 1px solid #DBE0E5; background: #F2F4F7; padding: 0 24px; } .ds-tab { position: relative; padding: 12px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; font-weight: 500; color: #8A9BAD; background: transparent; border: none; cursor: pointer; transition: color 0.15s cubic-bezier(0.16,1,0.3,1), background 0.15s cubic-bezier(0.16,1,0.3,1); } .ds-tab:hover { color: #151B28; background: rgba(21,27,40,0.04); } .ds-tab.ds-tab-active { color: #151B28; font-weight: 600; } .ds-tab.ds-tab-active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: #F59B1B; border-radius: 2px 2px 0 0; } .ds-tab:focus-visible { outline: 2px solid #F59B1B; outline-offset: -2px; }"
+    },
+    {
+      "name": "Total Badge",
+      "kind": "chip",
+      "refersTo": "chip-total-badge",
+      "description": "Inline pill showing aggregate counts next to chart card titles. Supporting information, never primary emphasis.",
+      "html": "<span class=\"ds-total-badge\">Total: 342</span>",
+      "css": ".ds-total-badge { display: inline-flex; align-items: center; background: #EAEDF1; color: #151B28; border-radius: 9999px; padding: 2px 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Amber Ledger",
+    "overview": "This is an instrument, not a showpiece. Every element either carries a data point or helps the user find the next one. The dominant amber marks where the organization's attention belongs; the structural navy anchors the frame with authority. Together they reject the safe middle ground of generic SaaS and land somewhere more specific: a command tool used by people who already know what they're looking for.\n\nThe surface is a pale cool slate. Cards emerge from it without drama. Charts encode meaning in color, not decoration. Typography is system sans throughout; every number is tabular. The interface disappears into the work.\n\nThis system explicitly rejects two failure modes: the generic blue-and-white SaaS template where every interactive element is the same shade of cornflower blue and nothing has earned visual priority; and the heavy BI tool aesthetic where dashboards are carpeted in docked filter panels and toolbar chrome.",
+    "keyCharacteristics": [
+      "Brand amber on primary actions, active states, and the leading chart series only",
+      "Structural navy for navigation, headers, and load-bearing frame elements",
+      "Cool-slate background that lifts white card surfaces without shadows",
+      "System fonts throughout; no display type in a data context",
+      "Flat at rest; shadows appear only on floating and interactive-elevated states"
+    ],
+    "rules": [
+      {
+        "name": "The Amber Discipline Rule",
+        "body": "Amber occupies at most three roles simultaneously on any screen: primary action, active selection, and the leading chart series. A view with amber in five different places has five competing claims on attention and no actual hierarchy.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Blue-Primary Rule",
+        "body": "The generic SaaS cornflower blue (#2563eb) is not a brand color. It lives in the chart data palette as one series among many. It is never used as a primary action color, focus ring, or interactive indicator.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Display Rule",
+        "body": "No editorial typefaces, no variable-weight animations, no serif headlines anywhere in the application UI. This is a command tool; type hierarchy signals information structure, not brand personality.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "Every number that shares a visual column, chart axis, or row with another number uses font-variant-numeric: tabular-nums. Ragged digit widths in financial data read as a defect.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "A resting box-shadow implies an element is permanently elevated and can be pressed further. Most content cards cannot be. Shadow at rest is a false promise; reserve it for state changes and floating overlays.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use Brand Amber (#F59B1B) for primary buttons, active tab indicators, and the leading chart series. Its contrast against the cool-slate ground is what gives it authority.",
+      "Do use Structural Navy (#335577) for the application header and navigation anchors.",
+      "Do keep card surfaces Surface White (#FFFFFF) against the Cool Slate background (#F2F4F7). Color contrast creates depth without shadows.",
+      "Do apply font-variant-numeric: tabular-nums to every number that appears alongside other numbers in a column, axis, or row.",
+      "Do make charts drillable: a click on a chart bar or segment opens a detail drawer in the same view.",
+      "Do keep the filter bar minimal. Surface the date range and the one or two filters that drive core decisions."
+    ],
+    "donts": [
+      "Don't use the generic SaaS blue (#2563eb) as a primary action color, focus ring, or tab indicator. It is a chart series color only.",
+      "Don't put box-shadows on cards at rest. Flat surfaces on a tinted background have inherent depth.",
+      "Don't use a heavy BI tool pattern: docked filter panels, toolbar rows above every chart, controls for every possible configuration visible simultaneously.",
+      "Don't add decorative gradients, background shapes, ambient glows, or any visual element that does not encode data or guide comprehension.",
+      "Don't use display typefaces, serif fonts, or variable-weight animations in the UI.",
+      "Don't scatter Brand Amber across more than three concurrent roles on the same screen."
+    ]
+  }
+}
