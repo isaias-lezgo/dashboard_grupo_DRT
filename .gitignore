@@ -22,3 +22,6 @@ node_modules/
 .superpowers/
 .vercel
 .env*
+
+# Screenshots de Playwright durante desarrollo
+drt-*.png
