@@ -10,7 +10,7 @@
 //
 // Puro y sin React para que scripts/verify-lost-cross.ts lo pueda aseverar: un
 // cruce mal armado no truena, da una respuesta plausible y equivocada.
-import type { Opportunity, Pipeline } from "./types"
+import type { Contact, Opportunity, Pipeline } from "./types"
 import {
   buildCategoryBreakdown,
   CANAL_FIELDS,
@@ -176,11 +176,12 @@ function desarrolloRows(
 function axisRows(
   lost: Opportunity[],
   dimension: LostDimensionId,
-  pipelines: Pipeline[] | undefined
+  pipelines: Pipeline[] | undefined,
+  contactById: Map<string, Contact> | undefined
 ): Array<CategoryRow & { missing: boolean }> {
   const dim = LOST_DIMENSIONS[dimension]
   if (dim.fromPipeline) return desarrolloRows(lost, pipelines)
-  return buildCategoryBreakdown(lost, dim.fieldNames).map((r) =>
+  return buildCategoryBreakdown(lost, dim.fieldNames, contactById).map((r) =>
     r.key === NO_VALUE_KEY
       ? { ...r, label: dim.missingLabel, missing: true }
       : { ...r, missing: false }
@@ -231,15 +232,17 @@ export function buildLostCrossMatrix(
   rowDimension: LostDimensionId,
   colDimension: LostDimensionId,
   /** Necesarios solo cuando alguno de los ejes es "desarrollo". */
-  pipelines?: Pipeline[]
+  pipelines?: Pipeline[],
+  /** Origen y canal viven en el CONTACTO en esta cuenta — ver categoryValuesOf. */
+  contactById?: Map<string, Contact>
 ): LostCrossMatrix {
   if (rowDimension === colDimension) return emptyMatrix(rowDimension, colDimension)
 
   const lost = opps.filter((o) => statusBucket(o) === "perdida")
   if (lost.length === 0) return emptyMatrix(rowDimension, colDimension)
 
-  const colRows = axisRows(lost, colDimension, pipelines)
-  const rowRows = axisRows(lost, rowDimension, pipelines)
+  const colRows = axisRows(lost, colDimension, pipelines, contactById)
+  const rowRows = axisRows(lost, rowDimension, pipelines, contactById)
   const colsByOpp = indexByOpp(colRows)
 
   const columns: LostCrossColumn[] = colRows.map((r) => ({

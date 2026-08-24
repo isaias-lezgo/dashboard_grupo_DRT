@@ -83,6 +83,16 @@ export function CategoryBreakdownChart({
   messages = [],
   locationId = "",
 }: CategoryBreakdownChartProps) {
+  // Origen y canal viven en el CONTACTO en esta cuenta, no en la oportunidad, así
+  // que la categoría se resuelve cruzando contra este mapa. Se arma sobre
+  // allContacts (sin filtrar por fecha): la oportunidad que está en pantalla
+  // puede colgar de un contacto creado fuera de la ventana, y perderlo la
+  // mandaría a "Sin dato" por un accidente del filtro.
+  const contactById = useMemo(
+    () => new Map(allContacts.map((c) => [c.id, c])),
+    [allContacts]
+  )
+
   const [drill, setDrill] = useState<DrillState>(DRILL_CLOSED)
   const scope = PANEL_SCOPES[panel]
 
@@ -91,7 +101,7 @@ export function CategoryBreakdownChart({
     [opportunities, panel, pipelines]
   )
   const rows = useMemo(
-    () => buildCategoryBreakdown(scoped, fieldNames),
+    () => buildCategoryBreakdown(scoped, fieldNames, contactById),
     [scoped, fieldNames]
   )
 

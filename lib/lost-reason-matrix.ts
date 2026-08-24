@@ -4,7 +4,7 @@
 // Puro y sin React para que scripts/verify-lost-matrix.ts lo pueda aseverar: un
 // cruce mal armado da una respuesta silenciosamente equivocada —una celda que
 // suma en la columna que no era se ve idéntica a una correcta.
-import type { Opportunity } from "./types"
+import type { Contact, Opportunity } from "./types"
 import {
   buildCategoryBreakdown,
   categoryKey,
@@ -93,14 +93,16 @@ function reasonOf(opp: Opportunity): string | null {
  */
 export function buildLostReasonMatrix(
   opps: Opportunity[],
-  fieldNames: string[]
+  fieldNames: string[],
+  /** La categoría puede vivir en el CONTACTO — ver categoryValuesOf. */
+  contactById?: Map<string, Contact>
 ): LostReasonMatrix {
   const lost = opps.filter((o) => statusBucket(o) === "perdida")
   if (lost.length === 0) return EMPTY
 
   // Columnas: el mismo ranking que dibuja el gráfico de categorías, que ya trae
   // los ids de cada grupo y deja "Sin dato" al final.
-  const catRows = buildCategoryBreakdown(lost, fieldNames)
+  const catRows = buildCategoryBreakdown(lost, fieldNames, contactById)
   const columns: LostMatrixColumn[] = catRows.map((r) => ({
     label: r.label,
     total: r.count,

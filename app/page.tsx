@@ -169,10 +169,17 @@ export default function DashboardPage() {
   // puede sacar a la luz un registro que los gráficos excluyeron. El asistente
   // de IA queda fuera a propósito, igual que del filtro de fechas.
   const baseOpportunities = data?.opportunities ?? []
+  // Origen y canal viven en el CONTACTO en esta cuenta — ver categoryValuesOf.
+  // Se arma sobre el set SIN filtrar por fecha, por la misma razón que los
+  // drill-downs resuelven contra los sets `all*`.
+  const contactById = useMemo(
+    () => new Map((data?.contacts ?? []).map((c) => [c.id, c])),
+    [data?.contacts]
+  )
   const [panelFilters, setPanelFilters] = useState<PanelFilters>(EMPTY_PANEL_FILTERS)
   const scopedOpportunities = useMemo(
-    () => applyPanelFilters(baseOpportunities, panelFilters, data?.pipelines),
-    [baseOpportunities, panelFilters, data?.pipelines]
+    () => applyPanelFilters(baseOpportunities, panelFilters, data?.pipelines, contactById),
+    [baseOpportunities, panelFilters, data?.pipelines, contactById]
   )
 
   // Las opciones y sus conteos se calculan SIN los filtros de panel puestos: si
@@ -232,12 +239,12 @@ export default function DashboardPage() {
   }, [baseOpportunities, activeTab, data?.pipelines, dateRange])
 
   const origenOptions = useMemo(
-    () => toMenuOptions(buildCategoryOptions(categoryBase, "origen"), panelFilters.origen),
-    [categoryBase, panelFilters.origen]
+    () => toMenuOptions(buildCategoryOptions(categoryBase, "origen", contactById), panelFilters.origen),
+    [categoryBase, panelFilters.origen, contactById]
   )
   const canalOptions = useMemo(
-    () => toMenuOptions(buildCategoryOptions(categoryBase, "canal"), panelFilters.canal),
-    [categoryBase, panelFilters.canal]
+    () => toMenuOptions(buildCategoryOptions(categoryBase, "canal", contactById), panelFilters.canal),
+    [categoryBase, panelFilters.canal, contactById]
   )
 
   // Human label of the active date filter, for the PDF report cover.

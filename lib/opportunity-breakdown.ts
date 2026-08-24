@@ -5,7 +5,7 @@
 // Puro y sin React para que scripts/verify-breakdown.ts lo pueda aseverar: un
 // número silenciosamente mal aquí es invisible en la UI, que es justo la clase
 // de bug por la que existen los scripts de verificación.
-import type { Opportunity } from "./types"
+import type { Contact, Opportunity } from "./types"
 import { isWonOpp } from "./opportunity-status"
 
 // ---------------------------------------------------------------------------
@@ -153,8 +153,12 @@ export function buildStatusByMonth(opps: Opportunity[]): StatusMonthRow[] {
  * apenas alcanza el 8% de poblado. Se lee el primero y se cae al segundo solo
  * cuando viene vacío.
  */
+// Las grafías varían por subcuenta ("Origen de Lead" / "Origen de lead"), así
+// que la búsqueda ignora mayúsculas — ver fieldValues(). La lista sigue
+// existiendo porque el ORDEN sí importa: es la preferencia entre campos
+// DISTINTOS, no entre grafías del mismo.
 export const ORIGEN_FIELDS = ["Origen de Lead", "Origen del lead"]
-export const CANAL_FIELDS = ["Canal de Contacto", "Canal del contacto"]
+export const CANAL_FIELDS = ["Canal de Contacto", "Canal del contacto", "Canal"]
 
 export const NO_VALUE_LABEL = "Sin dato"
 
@@ -257,17 +261,62 @@ function cfValues(v: string | string[] | undefined): string[] {
  * sumen un pelo más de 100%, lo cual se explica en el tooltip del gráfico en vez
  * de esconderse tras una regla de "gana el primero" que perdería información.
  */
-export function categoryValuesOf(opp: Opportunity, fieldNames: string[]): string[] {
-  const resolved = opp.customFieldsResolved
+/**
+ * Los valores de `fieldNames` en un mapa de campos resueltos, ignorando
+ * mayúsculas en el NOMBRE del campo.
+ *
+ * Primero intenta el match exacto, que es el caso común y no cuesta nada; solo
+ * si no encuentra recorre las claves comparando en minúsculas. Sin eso, una
+ * subcuenta que escribe "Origen de lead" en vez de "Origen de Lead" reporta
+ * 100% "Sin dato" — silencioso, plausible y completamente falso.
+ */
+function fieldValues(
+  resolved: Record<string, string | string[]> | undefined,
+  fieldNames: string[]
+): string[] {
   if (!resolved) return []
-  for (const name of fieldNames) {
-    const parts = cfValues(resolved[name])
+  const split = (v: string | string[] | undefined) =>
+    cfValues(v)
       .flatMap((s) => String(s).split(","))
       .map((s) => s.trim())
       .filter((s) => s !== "")
-    if (parts.length > 0) return parts
+
+  for (const name of fieldNames) {
+    const exact = split(resolved[name])
+    if (exact.length > 0) return exact
+  }
+  for (const name of fieldNames) {
+    const target = name.toLowerCase()
+    for (const key of Object.keys(resolved)) {
+      if (key.toLowerCase() !== target) continue
+      const parts = split(resolved[key])
+      if (parts.length > 0) return parts
+    }
   }
   return []
+}
+
+/**
+ * La categoría de una oportunidad, buscándola PRIMERO en la oportunidad y, si
+ * no la trae, en su contacto.
+ *
+ * Esa segunda vuelta no es un extra: en esta subcuenta `Origen de lead` y
+ * `Canal de contacto` son campos del CONTACTO y la oportunidad no los tiene
+ * nunca. Sin el fallback los dos gráficos de categoría, la tabla de motivos y un
+ * eje del cruce salen 100% "Sin dato" sobre 10,311 oportunidades.
+ *
+ * El orden importa y es el correcto: si algún día la oportunidad llegara a
+ * llenar el campo, ese valor es el más específico y debe ganar.
+ */
+export function categoryValuesOf(
+  opp: Opportunity,
+  fieldNames: string[],
+  contactById?: Map<string, Contact>
+): string[] {
+  const own = fieldValues(opp.customFieldsResolved, fieldNames)
+  if (own.length > 0) return own
+  const contact = opp.contactId ? contactById?.get(opp.contactId) : undefined
+  return fieldValues(contact?.customFieldsResolved, fieldNames)
 }
 
 export interface CategoryRow {
@@ -287,7 +336,9 @@ export interface CategoryRow {
  */
 export function buildCategoryBreakdown(
   opps: Opportunity[],
-  fieldNames: string[]
+  fieldNames: string[],
+  /** Para resolver categorías que viven en el contacto — ver categoryValuesOf. */
+  contactById?: Map<string, Contact>
 ): CategoryRow[] {
   // clave → { conteo por grafía cruda, ids }
   interface Group {
@@ -298,7 +349,7 @@ export function buildCategoryBreakdown(
   const missing: string[] = []
 
   for (const opp of opps) {
-    const values = categoryValuesOf(opp, fieldNames)
+    const values = categoryValuesOf(opp, fieldNames, contactById)
     if (values.length === 0) {
       missing.push(opp.id)
       continue

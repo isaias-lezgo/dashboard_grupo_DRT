@@ -126,7 +126,7 @@ export interface LostCrossMatrixProps {
 }
 
 /**
- * "Perdidas por servicio, origen y canal": el mismo conjunto de oportunidades
+ * "Perdidas por desarrollo, origen y canal": el mismo conjunto de oportunidades
  * perdidas visto sobre cualquier par de esas tres dimensiones.
  *
  * Va más allá de "Motivos de perdido", que contesta POR QUÉ se pierde: aquí la
@@ -150,6 +150,16 @@ export function LostCrossMatrix({
   messages = [],
   locationId = "",
 }: LostCrossMatrixProps) {
+  // Origen y canal viven en el CONTACTO en esta cuenta, no en la oportunidad, así
+  // que la categoría se resuelve cruzando contra este mapa. Se arma sobre
+  // allContacts (sin filtrar por fecha): la oportunidad que está en pantalla
+  // puede colgar de un contacto creado fuera de la ventana, y perderlo la
+  // mandaría a "Sin dato" por un accidente del filtro.
+  const contactById = useMemo(
+    () => new Map(allContacts.map((c) => [c.id, c])),
+    [allContacts]
+  )
+
   const [rowDim, setRowDim] = useState<LostDimensionId>(DEFAULT_ROW)
   const [colDim, setColDim] = useState<LostDimensionId>(DEFAULT_COL)
   const [expanded, setExpanded] = useState(false)
@@ -173,7 +183,7 @@ export function LostCrossMatrix({
     [opportunities, panel, pipelines]
   )
   const matrix = useMemo(
-    () => buildLostCrossMatrix(scoped, rowDim, colDim, pipelines),
+    () => buildLostCrossMatrix(scoped, rowDim, colDim, pipelines, contactById),
     [scoped, rowDim, colDim, pipelines]
   )
 
@@ -244,7 +254,7 @@ export function LostCrossMatrix({
   return (
     <DashboardCard>
       <ChartCardHeader
-        title="Perdidas por servicio, origen y canal"
+        title="Perdidas por desarrollo, origen y canal"
         icon={LayoutGrid}
         total={matrix.grandTotal}
         actions={

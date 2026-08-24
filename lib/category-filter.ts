@@ -13,7 +13,7 @@
 // Por eso NO fusiones los dos módulos. La normalización se usa aquí solo para
 // ordenar (que las variantes salgan pegadas) y para marcar cuántas hay; nunca
 // para unir dos opciones en una.
-import type { Opportunity } from "./types"
+import type { Contact, Opportunity } from "./types"
 import {
   CANAL_FIELDS,
   categoryValuesOf,
@@ -59,9 +59,11 @@ export interface CategoryOption {
  */
 export function categorySpellingsOf(
   opp: Opportunity,
-  dimension: CategoryDimension
+  dimension: CategoryDimension,
+  /** La categoría puede vivir en el CONTACTO — ver categoryValuesOf. */
+  contactById?: Map<string, Contact>
 ): string[] {
-  const values = categoryValuesOf(opp, CATEGORY_DIMENSIONS[dimension].fields)
+  const values = categoryValuesOf(opp, CATEGORY_DIMENSIONS[dimension].fields, contactById)
   if (values.length === 0) return [NO_VALUE_KEY]
   return [...new Set(values)]
 }
@@ -75,10 +77,11 @@ export function categorySpellingsOf(
 export function matchesCategory(
   opp: Opportunity,
   dimension: CategoryDimension,
-  selected: ReadonlySet<string>
+  selected: ReadonlySet<string>,
+  contactById?: Map<string, Contact>
 ): boolean {
   if (selected.size === 0) return true
-  return categorySpellingsOf(opp, dimension).some((v) => selected.has(v))
+  return categorySpellingsOf(opp, dimension, contactById).some((v) => selected.has(v))
 }
 
 /**
@@ -95,11 +98,12 @@ export function matchesCategory(
  */
 export function buildCategoryOptions(
   opps: Opportunity[],
-  dimension: CategoryDimension
+  dimension: CategoryDimension,
+  contactById?: Map<string, Contact>
 ): CategoryOption[] {
   const counts = new Map<string, number>()
   for (const opp of opps) {
-    for (const spelling of categorySpellingsOf(opp, dimension)) {
+    for (const spelling of categorySpellingsOf(opp, dimension, contactById)) {
       counts.set(spelling, (counts.get(spelling) ?? 0) + 1)
     }
   }

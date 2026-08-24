@@ -499,6 +499,19 @@ bug class these modules were extracted to kill.
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
 
+- **"Origen de lead" y "Canal de contacto" viven en el CONTACTO, no en la oportunidad.**
+  `categoryValuesOf()` busca primero en la oportunidad y **cae al contacto** a través de un
+  `contactById` opcional que los charts arman sobre `allContacts` (el set SIN filtrar: una
+  oportunidad en pantalla puede colgar de un contacto creado fuera de la ventana, y
+  perderlo la mandaría a "Sin dato" por un accidente del filtro). Sin ese fallback los dos
+  gráficos de categoría, "Motivos de perdido" y un eje del cruce salían **100% "Sin dato"
+  sobre 10,311 oportunidades** — verificado en el navegador el 2026-08-24.
+  - La búsqueda del nombre del campo **ignora mayúsculas** (match exacto primero, barrido
+    insensible después): esta cuenta escribe `Origen de lead`, no `Origen de Lead`.
+  - El "Sin dato" que queda (~54%) **sí es real y no se debe esconder**: en una muestra de
+    100 contactos, `Origen de lead` está poblado en 33% y `Canal de contacto` en 29%. Ese
+    hueco se corrige en GHL.
+
 - **`isWonOpp()`**: some sub-accounts never flip `status` to `"won"` — they record a sale
   by moving the opportunity into a late stage while `status` stays `"open"`. Detection
   matches the **stage name** (`/ganad[oa]|\bwon\b|\bventas?\b/i`), never hardcoded stage

@@ -101,6 +101,16 @@ export function LostReasonMatrix({
   messages = [],
   locationId = "",
 }: LostReasonMatrixProps) {
+  // Origen y canal viven en el CONTACTO en esta cuenta, no en la oportunidad, así
+  // que la categoría se resuelve cruzando contra este mapa. Se arma sobre
+  // allContacts (sin filtrar por fecha): la oportunidad que está en pantalla
+  // puede colgar de un contacto creado fuera de la ventana, y perderlo la
+  // mandaría a "Sin dato" por un accidente del filtro.
+  const contactById = useMemo(
+    () => new Map(allContacts.map((c) => [c.id, c])),
+    [allContacts]
+  )
+
   const [dimension, setDimension] = useState<DimensionId>("canal")
   const [expanded, setExpanded] = useState(false)
   const [drill, setDrill] = useState<DrillState>(DRILL_CLOSED)
@@ -112,7 +122,7 @@ export function LostReasonMatrix({
     [opportunities, panel, pipelines]
   )
   const matrix = useMemo(
-    () => buildLostReasonMatrix(scoped, dim.fieldNames),
+    () => buildLostReasonMatrix(scoped, dim.fieldNames, contactById),
     [scoped, dim.fieldNames]
   )
 

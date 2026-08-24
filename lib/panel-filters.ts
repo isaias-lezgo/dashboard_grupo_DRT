@@ -9,7 +9,7 @@
 //
 // Puro y sin React para que scripts/verify-panel-filters.ts pueda afirmarlo: un
 // filtro silenciosamente mal se ve igual que uno bien: números más chicos.
-import type { Opportunity, Pipeline } from "./types"
+import type { Contact, Opportunity, Pipeline } from "./types"
 import { NO_DESARROLLO, desarrolloOf } from "./panel-scope"
 import { matchesCategory } from "./category-filter"
 
@@ -101,7 +101,9 @@ export function collectAdvisors(opps: Opportunity[]): Advisor[] {
 export function applyPanelFilters(
   opps: Opportunity[],
   filters: PanelFilters,
-  pipelines?: Pipeline[]
+  pipelines?: Pipeline[],
+  /** Origen y canal viven en el CONTACTO en esta cuenta — ver categoryValuesOf. */
+  contactById?: Map<string, Contact>
 ): Opportunity[] {
   const byDesarrollo = filters.desarrollos.length > 0
   const byAsesor = filters.asesores.length > 0
@@ -120,8 +122,8 @@ export function applyPanelFilters(
   return opps.filter((o) => {
     if (byDesarrollo && !desarrollos.has(desarrolloOf(o, pipelines))) return false
     if (byAsesor && !asesores.has(advisorKeyOf(o))) return false
-    if (byOrigen && !matchesCategory(o, "origen", origen)) return false
-    if (byCanal && !matchesCategory(o, "canal", canal)) return false
+    if (byOrigen && !matchesCategory(o, "origen", origen, contactById)) return false
+    if (byCanal && !matchesCategory(o, "canal", canal, contactById)) return false
     return true
   })
 }
