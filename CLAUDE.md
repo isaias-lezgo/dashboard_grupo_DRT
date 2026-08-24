@@ -254,12 +254,21 @@ reintroduce a `sucursalField`-style seam here.
   not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
   over **two of three** dimensions, with a per-axis switch; choosing the other axis's
   dimension **transposes** the table instead of forcing a third onto the other axis).
-- **`lost-cross-matrix.tsx` still offers a `Servicio` axis, and DRT has no such field.**
-  Its `LOST_DIMENSIONS.servicio` reads `SERVICIO_FIELD` ("Servicio") from `lib/sales-pivot.ts`,
-  which was VAEO's vocabulary — here it will resolve to an all-"Sin servicio" column. The
-  DRT-correct third dimension is almost certainly **desarrollo** (from the pipeline) or
-  `Tipo de vivienda`; pick one, measure its capture rate first, and rewire that entry.
-  Origen × Canal — the other two axes — work today.
+- **`lost-cross-matrix.tsx`'s third axis is `Desarrollo`, not `Servicio`.** The dimension it
+  replaced read a custom field that does not exist in this account. Desarrollo comes from
+  the **pipeline**, which makes it the only one of the three axes populated 100% of the
+  time and incapable of degrading into a capture gap — so `LostDimension` grew a
+  `fromPipeline` flag and `buildLostCrossMatrix()` takes an optional `pipelines` argument.
+  It is also **mono-valued**, unlike origen and canal: an opportunity lives in exactly one
+  embudo, so the double-counting assertions only apply to the other two axes.
+  - Its "Sin desarrollo" bucket means something different from the other two: not "nobody
+    filled the field in" but "this opportunity is in a pipeline the sync didn't return."
+    It should be zero in production; if it grows, look at the sync or the CRM, not at how
+    the sales team captures data. The footnote under the table says exactly that.
+  - If you ever want a real *product* dimension (`Tipo de vivienda`, `Objetivo de compra`),
+    add it as a fourth entry and **measure its capture rate first** — the fields this team
+    fills at closing sit around 5%, and a near-empty axis reads as a broken cross, not as a
+    finding.
 - **Charts deliberately absent, and why.** `sales-pivot-table.tsx`,
   `sales-by-dimension-chart.tsx` and `lost-by-dimension-chart.tsx` were **removed** in the
   DRT fork. All three key off `Fecha de Cierre` × sucursal × servicio, and in this account

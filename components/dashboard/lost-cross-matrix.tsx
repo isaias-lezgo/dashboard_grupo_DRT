@@ -62,7 +62,7 @@ function heatAlpha(count: number, max: number, sentinel: boolean): number {
  */
 const COLLAPSED_ROWS = 10
 
-const DEFAULT_ROW: LostDimensionId = "servicio"
+const DEFAULT_ROW: LostDimensionId = "desarrollo"
 const DEFAULT_COL: LostDimensionId = "canal"
 
 /** Un grupo de botones de eje. Mismo chrome que el switch de "Motivos de perdido". */
@@ -173,8 +173,8 @@ export function LostCrossMatrix({
     [opportunities, panel, pipelines]
   )
   const matrix = useMemo(
-    () => buildLostCrossMatrix(scoped, rowDim, colDim),
-    [scoped, rowDim, colDim]
+    () => buildLostCrossMatrix(scoped, rowDim, colDim, pipelines),
+    [scoped, rowDim, colDim, pipelines]
   )
 
   // La fila de totales SIEMPRE suma la matriz completa, esté colapsada o no: el
@@ -198,20 +198,21 @@ export function LostCrossMatrix({
   }, [matrix.rows, expanded])
 
   /**
-   * Cuántas perdidas no traen Servicio capturado, si Servicio está en algún eje.
+   * Cuántas perdidas no resuelven su desarrollo, si Desarrollo está en algún eje.
    *
-   * El equipo llena ese campo al CERRAR la venta, así que en las perdidas ronda
-   * el 5%. Decirlo en voz alta bajo la tabla es el punto: sin la nota, una fila
-   * "Sin servicio" del 90% se lee como si el negocio vendiera nada en concreto,
-   * cuando lo que dice es que el dato falta.
+   * A diferencia del campo que ocupaba este lugar antes, el desarrollo sale del
+   * EMBUDO y está poblado al 100%, así que esta nota normalmente NO aparece. Si
+   * aparece, no es un hueco de captura del equipo de ventas: significa que hay
+   * oportunidades en un embudo que el sync no trajo o que se borró del CRM, y
+   * eso se revisa en GHL, no en la tarjeta.
    */
-  const servicioGap = useMemo(() => {
+  const desarrolloGap = useMemo(() => {
     if (matrix.grandTotal === 0) return null
-    if (rowDim === "servicio") {
+    if (rowDim === "desarrollo") {
       const row = matrix.rows.find((r) => r.missing)
       return row ? row.total : 0
     }
-    if (colDim === "servicio") {
+    if (colDim === "desarrollo") {
       const col = matrix.columns.find((c) => c.missing)
       return col ? col.total : 0
     }
@@ -418,12 +419,13 @@ export function LostCrossMatrix({
               </button>
             )}
 
-            {servicioGap !== null && servicioGap > 0 && (
+            {desarrolloGap !== null && desarrolloGap > 0 && (
               <p className="mt-3 border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
-                <span className={cn("font-medium", MISSING_TEXT)}>Servicio</span> se captura
-                al cerrar la venta, no al perder: {n(servicioGap)} de {n(matrix.grandTotal)}{" "}
-                perdidas ({pctFmt.format((servicioGap / matrix.grandTotal) * 100)}%) no lo
-                traen. Ese hueco se corrige en GHL, no aquí.
+                {n(desarrolloGap)} de {n(matrix.grandTotal)} perdidas{" "}
+                ({pctFmt.format((desarrolloGap / matrix.grandTotal) * 100)}%) están en un
+                embudo que no resuelve su{" "}
+                <span className={cn("font-medium", MISSING_TEXT)}>desarrollo</span>. El
+                desarrollo sale del embudo y debería estar siempre: revísalo en GHL.
               </p>
             )}
           </>

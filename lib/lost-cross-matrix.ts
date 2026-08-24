@@ -1,4 +1,4 @@
-// El cruce detrás de la tabla "Perdidas por servicio, origen y canal": las
+// El cruce detrás de la tabla "Perdidas por desarrollo, origen y canal": las
 // oportunidades perdidas repartidas sobre DOS de esas tres dimensiones, elegidas
 // en la tarjeta.
 //
@@ -10,7 +10,7 @@
 //
 // Puro y sin React para que scripts/verify-lost-cross.ts lo pueda aseverar: un
 // cruce mal armado no truena, da una respuesta plausible y equivocada.
-import type { Opportunity } from "./types"
+import type { Opportunity, Pipeline } from "./types"
 import {
   buildCategoryBreakdown,
   CANAL_FIELDS,
@@ -19,38 +19,46 @@ import {
   statusBucket,
   type CategoryRow,
 } from "./opportunity-breakdown"
-import { SERVICIO_FIELD, NO_SERVICIO } from "./sales-pivot"
+import { desarrolloOf, NO_DESARROLLO } from "./panel-scope"
 
-export type LostDimensionId = "servicio" | "origen" | "canal"
+export type LostDimensionId = "desarrollo" | "origen" | "canal"
 
 export interface LostDimension {
   /** Etiqueta del eje, tal como se lee en GHL. */
   label: string
-  /** Campos a leer, en orden de preferencia — ver ORIGEN_FIELDS / CANAL_FIELDS. */
+  /**
+   * Campos a leer, en orden de preferencia — ver ORIGEN_FIELDS / CANAL_FIELDS.
+   * Vacío cuando la dimensión NO sale de un campo personalizado (ver `fromPipeline`).
+   */
   fieldNames: string[]
   /** Cómo se llama la cubeta de los que no traen valor, en el eje que sea. */
   missingLabel: string
+  /**
+   * true cuando el eje se resuelve del EMBUDO y no de un campo. Es mono-valor
+   * por construcción: una oportunidad vive en un solo embudo.
+   */
+  fromPipeline?: boolean
 }
 
 /**
  * Las tres dimensiones que la tarjeta alterna.
  *
- * `Servicio` se lee del MISMO campo que el pivot de ventas (`SERVICIO_FIELD`),
- * no de una copia: si un día se renombra, las dos tarjetas tienen que moverse
- * juntas o reportarían universos distintos para la misma palabra.
+ * `Desarrollo` sale del EMBUDO, no de un campo personalizado — en esta cuenta el
+ * pipeline ES el desarrollo. Eso lo vuelve el único de los tres ejes que está
+ * poblado al 100% y que no puede degradarse por un hueco de captura.
  *
- * Ojo con lo que ese campo significa aquí: medido contra producción el
- * 2026-08-17, `Servicio` viene poblado en ~5% de las oportunidades perdidas del
- * embudo VAEO (0/100 en agosto, 6/100 en junio, 27/100 en marzo) contra ~99% de
- * origen y canal. El equipo lo captura al CERRAR la venta. La cubeta "Sin
- * servicio" siendo enorme no es un bug del cruce: es el hallazgo, y la tarjeta
- * lo dice con todas sus letras en vez de esconderlo.
+ * Ocupa el lugar que en el panel del que salió este código tenía `Servicio`, un
+ * campo que aquí no existe. Si algún día se quiere una dimensión de producto de
+ * verdad (`Tipo de vivienda`, `Objetivo de compra`), agrégala como una cuarta
+ * entrada y MIDE SU POBLADO ANTES: los campos que se capturan al cerrar rondan
+ * el 5% en esta cuenta, y un eje casi vacío se lee como un cruce roto.
  */
 export const LOST_DIMENSIONS: Record<LostDimensionId, LostDimension> = {
-  servicio: {
-    label: "Servicio",
-    fieldNames: [SERVICIO_FIELD],
-    missingLabel: NO_SERVICIO,
+  desarrollo: {
+    label: "Desarrollo",
+    fieldNames: [],
+    missingLabel: NO_DESARROLLO,
+    fromPipeline: true,
   },
   origen: {
     label: "Origen de Lead",
@@ -75,7 +83,7 @@ export interface LostCrossColumn {
   /** Etiqueta de la categoría; es también la clave de React. */
   label: string
   total: number
-  /** true para la cubeta sin valor capturado ("Sin servicio", "Sin canal", …). */
+  /** true para la cubeta sin valor capturado ("Sin desarrollo", "Sin canal", …). */
   missing: boolean
 }
 
@@ -106,9 +114,9 @@ export interface LostCrossMatrix {
    * o sea ignorando las filas y columnas centinela. Es el denominador del
    * sombreado de calor.
    *
-   * Dejar fuera las cubetas vacías no es cosmético: en esta cuenta "Sin
-   * servicio" se lleva el 89% de las perdidas, así que normalizar contra ella
-   * pintaría toda la tabla real en un blanco indistinguible. Es la misma
+   * Dejar fuera las cubetas vacías no es cosmético: origen y canal sí tienen
+   * cubetas grandes, y normalizar contra ellas pintaría toda la tabla real en un
+   * blanco indistinguible. Es la misma
    * decisión que la fila "Sin asesor" de advisor-stage-table, y la misma regla
    * de `MISSING_TEXT`: en una cubeta centinela el color se va a la etiqueta, no
    * al fondo, porque ahí el fondo codifica cantidad.
@@ -129,12 +137,49 @@ const emptyMatrix = (
   maxCell: 0,
 })
 
+/**
+ * El eje de desarrollo, con la MISMA forma que devuelve buildCategoryBreakdown
+ * para que el resto del cruce no tenga que saber de dónde salió cada eje.
+ *
+ * Mono-valor: una oportunidad vive en un solo embudo, así que aquí no hay el
+ * doble conteo que sí tienen origen y canal. Ordenado de mayor a menor con la
+ * cubeta vacía siempre al final, igual que el ranking de categorías.
+ */
+function desarrolloRows(
+  lost: Opportunity[],
+  pipelines: Pipeline[] | undefined
+): Array<CategoryRow & { missing: boolean }> {
+  const groups = new Map<string, string[]>()
+  for (const o of lost) {
+    const label = desarrolloOf(o, pipelines)
+    const ids = groups.get(label)
+    if (ids) ids.push(o.id)
+    else groups.set(label, [o.id])
+  }
+  return [...groups.entries()]
+    .map(([label, oppIds]) => ({
+      key: label,
+      label,
+      count: oppIds.length,
+      pct: lost.length > 0 ? (oppIds.length / lost.length) * 100 : 0,
+      oppIds,
+      missing: label === NO_DESARROLLO,
+    }))
+    .sort((a, b) =>
+      a.missing !== b.missing
+        ? Number(a.missing) - Number(b.missing)
+        : b.count - a.count || a.label.localeCompare(b.label, "es")
+    )
+}
+
 /** Las categorías de un eje, con la cubeta vacía renombrada para esa dimensión. */
 function axisRows(
   lost: Opportunity[],
-  dimension: LostDimensionId
+  dimension: LostDimensionId,
+  pipelines: Pipeline[] | undefined
 ): Array<CategoryRow & { missing: boolean }> {
   const dim = LOST_DIMENSIONS[dimension]
+  if (dim.fromPipeline) return desarrolloRows(lost, pipelines)
   return buildCategoryBreakdown(lost, dim.fieldNames).map((r) =>
     r.key === NO_VALUE_KEY
       ? { ...r, label: dim.missingLabel, missing: true }
@@ -162,9 +207,9 @@ function indexByOpp(rows: CategoryRow[]): Map<string, number[]> {
  * Los dos ejes salen de `buildCategoryBreakdown()`, no de una normalización
  * propia: así la columna "WhatsApp" de esta tabla agrupa exactamente las mismas
  * oportunidades que la barra "WhatsApp" del ranking de al lado, y la fila
- * "Coworking" las mismas que la barra de ventas por servicio. Duplicar ese
  * agrupamiento es justo la deriva que los módulos compartidos existen para
- * evitar.
+ * evitar. El eje de desarrollo es la excepción: sale del embudo, no de un campo,
+ * y por eso se arma aquí (ver desarrolloRows).
  *
  * "Perdida" es `statusBucket()`, o sea `lost` o `abandoned` y nunca una que
  * `isWonOpp()` dé por ganada — la misma definición que la barra roja del gráfico
@@ -184,15 +229,17 @@ function indexByOpp(rows: CategoryRow[]): Map<string, number[]> {
 export function buildLostCrossMatrix(
   opps: Opportunity[],
   rowDimension: LostDimensionId,
-  colDimension: LostDimensionId
+  colDimension: LostDimensionId,
+  /** Necesarios solo cuando alguno de los ejes es "desarrollo". */
+  pipelines?: Pipeline[]
 ): LostCrossMatrix {
   if (rowDimension === colDimension) return emptyMatrix(rowDimension, colDimension)
 
   const lost = opps.filter((o) => statusBucket(o) === "perdida")
   if (lost.length === 0) return emptyMatrix(rowDimension, colDimension)
 
-  const colRows = axisRows(lost, colDimension)
-  const rowRows = axisRows(lost, rowDimension)
+  const colRows = axisRows(lost, colDimension, pipelines)
+  const rowRows = axisRows(lost, rowDimension, pipelines)
   const colsByOpp = indexByOpp(colRows)
 
   const columns: LostCrossColumn[] = colRows.map((r) => ({

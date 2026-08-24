@@ -1,5 +1,5 @@
 // Verification for lib/lost-cross-matrix.ts — el cruce de la tabla "Perdidas por
-// servicio, origen y canal".
+// desarrollo, origen y canal".
 // Correr: pnpm verify:lost-cross
 //
 // Lo que aquí se puede romper sin que truene nada: (a) que se cuele una
@@ -11,40 +11,67 @@
 //
 // Envuelto en main() en vez de top-level await: este paquete es CJS.
 import assert from "node:assert/strict";
-import type { Opportunity } from "../lib/types";
+import type { Opportunity, Pipeline } from "../lib/types";
 import { buildCategoryBreakdown, CANAL_FIELDS } from "../lib/opportunity-breakdown";
-import { NO_SERVICIO } from "../lib/sales-pivot";
+import { NO_DESARROLLO } from "../lib/panel-scope";
 import {
   buildLostCrossMatrix,
   LOST_DIMENSIONS,
   type LostCrossMatrix,
+  type LostDimensionId,
 } from "../lib/lost-cross-matrix";
 
 let seq = 0;
+
+/**
+ * Los embudos SON los desarrollos, así que el eje de desarrollo se arma desde
+ * aquí y no desde un campo personalizado. Una oportunidad con un `desarrollo`
+ * que no está en esta lista cae en el embudo huérfano, que es como se prueba la
+ * cubeta centinela.
+ */
+const PIPELINES: Pipeline[] = [
+  { id: "pipe-canadas", name: "Cañadas", stages: ["00. Recibido", "08. Venta"] },
+  { id: "pipe-atria", name: "Atria", stages: ["00. Recibido", "08. Venta"] },
+  { id: "pipe-sierra", name: "La Sierra", stages: ["00. Recibido", "08. Venta"] },
+];
+
+const PIPE_BY_NAME: Record<string, string> = {
+  "Cañadas": "pipe-canadas",
+  Atria: "pipe-atria",
+  "La Sierra": "pipe-sierra",
+};
+
+/** El módulo bajo prueba, siempre con los mismos embudos. */
+const build = (
+  opps: Opportunity[],
+  row: LostDimensionId,
+  col: LostDimensionId
+): LostCrossMatrix => buildLostCrossMatrix(opps, row, col, PIPELINES);
 
 // Oportunidad mínimamente válida; solo importan los campos que lee el módulo.
 function opp(o: {
   status?: Opportunity["status"];
   stage?: string;
-  servicio?: string;
+  desarrollo?: string;
   origen?: string;
   canal?: string;
 }): Opportunity {
   const cf: Record<string, string> = {};
-  if (o.servicio !== undefined) cf["Servicio"] = o.servicio;
   if (o.origen !== undefined) cf["Origen de Lead"] = o.origen;
   if (o.canal !== undefined) cf["Canal de Contacto"] = o.canal;
+  const pipelineId =
+    (o.desarrollo !== undefined ? PIPE_BY_NAME[o.desarrollo] : undefined) ?? "pipe-huerfano";
   return {
     id: `o${++seq}`,
     name: `Opp ${seq}`,
-    pipelineId: "pipe-1",
+    pipelineId,
     pipelineStageId: "stage-1",
     status: o.status ?? "lost",
     createdAt: "2026-06-15T12:00:00.000Z",
     contactId: `c${seq}`,
     value: 0,
-    stage: o.stage ?? "Perdido",
-    pipelineName: "VAEO",
+    stage: o.stage ?? "Negocio perdido",
+    pipelineName: o.desarrollo ?? "",
     ...(Object.keys(cf).length > 0 ? { customFieldsResolved: cf } : {}),
   };
 }
@@ -70,19 +97,19 @@ function main() {
   //    oportunidad `open` en etapa "Ganado" NO puede colarse; `abandoned` sí es
   //    pérdida, igual que en la barra roja del gráfico de estado.
   {
-    const m = buildLostCrossMatrix(
+    const m = build(
       [
-        opp({ status: "lost", servicio: "Coworking", canal: "WHATSAPP" }),
-        opp({ status: "abandoned", servicio: "Coworking", canal: "DM" }),
-        opp({ status: "open", stage: "Ganado", servicio: "Coworking", canal: "DM" }),
-        opp({ status: "won", stage: "Ganado", servicio: "Coworking", canal: "DM" }),
-        opp({ status: "open", stage: "Propuesta", servicio: "Coworking", canal: "DM" }),
+        opp({ status: "lost", desarrollo: "Cañadas", canal: "WHATSAPP" }),
+        opp({ status: "abandoned", desarrollo: "Cañadas", canal: "DM" }),
+        opp({ status: "open", stage: "Ganado", desarrollo: "Cañadas", canal: "DM" }),
+        opp({ status: "won", stage: "Ganado", desarrollo: "Cañadas", canal: "DM" }),
+        opp({ status: "open", stage: "Propuesta", desarrollo: "Cañadas", canal: "DM" }),
       ],
-      "servicio",
+      "desarrollo",
       "canal"
     );
     assert.equal(m.grandTotal, 2, "solo cuentan lost + abandoned");
-    assert.equal(rowFor(m, "Coworking").total, 2);
+    assert.equal(rowFor(m, "Cañadas").total, 2);
   }
 
   // 2. Cada eje es EXACTAMENTE el ranking de categorías sobre el mismo conjunto
@@ -90,12 +117,12 @@ function main() {
   //    lado reportarían agrupamientos distintos para la misma pregunta.
   {
     const lost = [
-      opp({ servicio: "Coworking", canal: "WHATSAPP" }),
-      opp({ servicio: "Coworking", canal: "whatsapp" }),
-      opp({ servicio: "Sala de Juntas", canal: "DM" }),
-      opp({ servicio: "Sala de Juntas" }),
+      opp({ desarrollo: "Cañadas", canal: "WHATSAPP" }),
+      opp({ desarrollo: "Cañadas", canal: "whatsapp" }),
+      opp({ desarrollo: "Sala de Juntas", canal: "DM" }),
+      opp({ desarrollo: "Sala de Juntas" }),
     ];
-    const m = buildLostCrossMatrix(lost, "servicio", "canal");
+    const m = build(lost, "desarrollo", "canal");
     const bars = buildCategoryBreakdown(lost, CANAL_FIELDS);
     assert.deepEqual(
       m.columns.map((c) => c.total),
@@ -112,7 +139,7 @@ function main() {
   //    fila, en el de su columna y en el gran total. Esta es la diferencia real
   //    contra lost-reason-matrix, donde el eje de filas nunca era multi-valor.
   {
-    const m = buildLostCrossMatrix(
+    const m = build(
       [opp({ origen: "Meta, Sitio Web", canal: "DM, WHATSAPP" })],
       "origen",
       "canal"
@@ -133,49 +160,54 @@ function main() {
   }
 
   // 4. Las cubetas de captura faltante van al final de su eje aunque sean las
-  //    más grandes, y cada dimensión trae su propia etiqueta: en este cruce
-  //    "Sin servicio" es EL hallazgo (el campo solo se captura al cerrar), así
-  //    que tiene que ser reconocible, no un "Sin dato" genérico.
+  //    más grandes, y cada dimensión trae su propia etiqueta reconocible en vez
+  //    de un "Sin dato" genérico.
+  //
+  //    Ojo con qué significa aquí la centinela del eje de desarrollo: como el
+  //    desarrollo sale del EMBUDO, "Sin desarrollo" no es un campo que nadie
+  //    llenó, es una oportunidad en un embudo que no vino en la lista de
+  //    pipelines. Debería ser cero en producción; si crece, el problema está en
+  //    el sync o en el CRM, no en la captura del equipo de ventas.
   {
-    const m = buildLostCrossMatrix(
+    const m = build(
       [
         opp({ canal: "DM" }),
         opp({ canal: "DM" }),
-        opp({ servicio: "   ", canal: "DM" }),
-        opp({ servicio: "Coworking" }),
+        opp({ desarrollo: "   ", canal: "DM" }),
+        opp({ desarrollo: "Cañadas" }),
         // La única celda con dato real en los DOS ejes: es la que debe fijar el
-        // techo del sombreado, aunque "Sin servicio × DM" la triplique.
-        opp({ servicio: "Coworking", canal: "DM" }),
+        // techo del sombreado, aunque "Sin desarrollo × DM" la triplique.
+        opp({ desarrollo: "Cañadas", canal: "DM" }),
       ],
-      "servicio",
+      "desarrollo",
       "canal"
     );
     const last = m.rows[m.rows.length - 1];
-    assert.equal(last.label, NO_SERVICIO);
-    assert.equal(last.label, LOST_DIMENSIONS.servicio.missingLabel);
+    assert.equal(last.label, NO_DESARROLLO);
+    assert.equal(last.label, LOST_DIMENSIONS.desarrollo.missingLabel);
     assert.equal(last.missing, true);
-    assert.equal(last.total, 3, "el servicio en blanco cae en Sin servicio");
+    assert.equal(last.total, 3, "el embudo que no resuelve cae en Sin desarrollo");
     assert.equal(m.columns[m.columns.length - 1].label, LOST_DIMENSIONS.canal.missingLabel);
     assert.equal(m.columns[m.columns.length - 1].missing, true);
     // Y esas cubetas NO mandan en el sombreado: la celda más grande de la tabla
-    // es "Sin servicio × DM" con 3, pero maxCell mira solo el dato real (1).
-    // Sin esto, la fila del 89% deja el resto de la tabla en blanco ilegible.
+    // es "Sin desarrollo × DM" con 3, pero maxCell mira solo el dato real (1).
+    // Sin esto, una centinela grande deja el resto de la tabla en blanco ilegible.
     assert.equal(last.cells[colIndex(m, "DM")].count, 3, "la centinela sí es la celda mayor");
     assert.equal(m.maxCell, 1, "maxCell ignora filas y columnas centinela");
     // Y la etiqueta cambia con el eje: la misma ausencia, dicha en su idioma.
-    const otra = buildLostCrossMatrix([opp({ canal: "DM" })], "origen", "canal");
+    const otra = build([opp({ canal: "DM" })], "origen", "canal");
     assert.equal(otra.rows[otra.rows.length - 1].label, LOST_DIMENSIONS.origen.missingLabel);
   }
 
   // 5. La fila de totales está alineada con las columnas y cuadra con ellas.
   {
-    const m = buildLostCrossMatrix(
+    const m = build(
       [
-        opp({ servicio: "Coworking", canal: "DM" }),
-        opp({ servicio: "Sala de Juntas", canal: "DM" }),
-        opp({ servicio: "Sala de Juntas", canal: "Llamada" }),
+        opp({ desarrollo: "Cañadas", canal: "DM" }),
+        opp({ desarrollo: "Sala de Juntas", canal: "DM" }),
+        opp({ desarrollo: "Sala de Juntas", canal: "Llamada" }),
       ],
-      "servicio",
+      "desarrollo",
       "canal"
     );
     assert.equal(m.totals.length, m.columns.length);
@@ -197,14 +229,14 @@ function main() {
   //    cuáles se eligieron: son la misma pregunta vista desde otro ángulo.
   {
     const lost = [
-      opp({ servicio: "Coworking", origen: "Meta", canal: "DM" }),
-      opp({ servicio: "Sala de Juntas", origen: "Sitio Web", canal: "Formulario" }),
+      opp({ desarrollo: "Cañadas", origen: "Meta", canal: "DM" }),
+      opp({ desarrollo: "Sala de Juntas", origen: "Sitio Web", canal: "Formulario" }),
       opp({ origen: "Meta", canal: "WHATSAPP" }),
     ];
-    const ids = ["servicio", "origen", "canal"] as const;
+    const ids = ["desarrollo", "origen", "canal"] as const;
     for (const fila of ids) {
       for (const col of ids) {
-        const m = buildLostCrossMatrix(lost, fila, col);
+        const m = build(lost, fila, col);
         if (fila === col) {
           // Diagonal sin sentido: matriz vacía, no una tabla plausible y falsa.
           assert.deepEqual(m.rows, [], `${fila} × ${col} no se cruza consigo mismo`);
@@ -222,26 +254,26 @@ function main() {
 
   // 7. Sin perdidas: matriz vacía, sin reventar ni dividir entre cero.
   {
-    const m = buildLostCrossMatrix(
+    const m = build(
       [opp({ status: "open", stage: "Propuesta", canal: "DM" })],
-      "servicio",
+      "desarrollo",
       "canal"
     );
     assert.deepEqual(m.rows, []);
     assert.deepEqual(m.columns, []);
     assert.equal(m.grandTotal, 0);
     assert.equal(m.maxCell, 0);
-    assert.deepEqual(buildLostCrossMatrix([], "origen", "canal").rows, []);
+    assert.deepEqual(build([], "origen", "canal").rows, []);
   }
 
   // 8. Los ids de una celda son resolvibles: son los mismos que trae la fila y la
   //    columna. El drawer se arma con ellos, así que una celda que devuelva ids
   //    que no existen abriría un cajón vacío.
   {
-    const a = opp({ servicio: "Coworking", canal: "DM" });
-    const b = opp({ servicio: "Coworking", canal: "Llamada" });
-    const m = buildLostCrossMatrix([a, b], "servicio", "canal");
-    const row = rowFor(m, "Coworking");
+    const a = opp({ desarrollo: "Cañadas", canal: "DM" });
+    const b = opp({ desarrollo: "Cañadas", canal: "Llamada" });
+    const m = build([a, b], "desarrollo", "canal");
+    const row = rowFor(m, "Cañadas");
     assert.deepEqual(row.cells[colIndex(m, "DM")].oppIds, [a.id]);
     assert.deepEqual(row.cells[colIndex(m, "Llamada")].oppIds, [b.id]);
     assert.deepEqual([...row.oppIds].sort(), [a.id, b.id].sort());
