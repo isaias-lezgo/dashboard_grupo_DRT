@@ -72,6 +72,27 @@ type DashboardTab = PanelId | "conversations"
 /** Las pestañas, en orden. GENERAL primero: es la vista de grupo. */
 const PANEL_TABS = ["general", ...DESARROLLO_PANELS] as const satisfies readonly PanelId[]
 
+/**
+ * La marca de cada desarrollo, sacada del favicon o del isotipo de su propio
+ * sitio y recortada al trazo (sin el aire del encuadre original).
+ *
+ * Se guardan con su PROPORCIÓN REAL, no cuadradas, y la pestaña las dibuja a
+ * alto fijo con ancho libre: el isotipo de Cañadas son tres techos en 3.2:1 y
+ * dentro de una caja cuadrada de 16px quedaba en una franja de 5px, invisible.
+ *
+ * Palmyra no tiene entrada a propósito: su sitio responde 403 y lo único
+ * publicado es una tarjeta de marketing con un sello "PRÓXIMAMENTE" encima, sin
+ * activo utilizable a este tamaño. Cae al icono genérico, que es lo honesto
+ * mientras el desarrollo no arranque.
+ */
+const PANEL_MARKS: Partial<Record<PanelId, { src: string; w: number; h: number }>> = {
+  atria: { src: "/atria-mark.png", w: 70, h: 64 },
+  canadas: { src: "/canadas-mark.png", w: 205, h: 64 },
+  lasierra: { src: "/lasierra-mark.png", w: 24, h: 32 },
+  saggita: { src: "/saggita-mark.png", w: 48, h: 64 },
+  zanda: { src: "/zanda-mark.png", w: 68, h: 64 },
+}
+
 // Browser-tab title per view. The app is a single route, so the title is set
 // imperatively — `metadata` in layout.tsx can only give one static fallback.
 function tabTitle(tab: DashboardTab): string {
@@ -470,13 +491,13 @@ export default function DashboardPage() {
               id: id as DashboardTab,
               label: id === "general" ? "GENERAL" : PANEL_SCOPES[id].label,
               icon: id === "general" ? LayoutGrid : Building2,
-              mark: null as string | null,
+              mark: PANEL_MARKS[id] ?? null,
             })),
             {
               id: "conversations" as DashboardTab,
               label: "Asistente IA",
               icon: Sparkles,
-              mark: null as string | null,
+              mark: null,
             },
           ].map(({ id, label, icon: Icon, mark }) => {
             const active = activeTab === id
@@ -492,13 +513,15 @@ export default function DashboardPage() {
               >
                 {mark ? (
                   <Image
-                    src={mark}
+                    src={mark.src}
                     alt=""
-                    width={60}
-                    height={60}
+                    width={mark.w}
+                    height={mark.h}
                     aria-hidden
                     className={cn(
-                      "h-4 w-4 shrink-0 object-contain transition-opacity duration-200",
+                      // Alto fijo y ancho libre: cada marca conserva su
+                      // proporción en vez de aplastarse en un cuadrado.
+                      "h-4 w-auto max-w-[26px] shrink-0 object-contain transition-opacity duration-200",
                       active ? "opacity-100" : "opacity-60",
                     )}
                   />
