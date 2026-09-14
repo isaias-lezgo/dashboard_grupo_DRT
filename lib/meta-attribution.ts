@@ -32,7 +32,7 @@ import type {
   Pipeline,
 } from "./types";
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
-import { isWonOpp } from "./opportunity-status";
+import { reachedStage, stageIndexOf } from "./desarrollo-funnel";
 import { isDePauta, resolveCampaignName, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 
@@ -265,17 +265,10 @@ export function localDay(iso: string, timeZone: string = PANEL_TIME_ZONE): strin
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
-// "05. Visita al Desarrollo" → 5. Los side buckets no tienen prefijo → null.
-export function stageIndexOf(stage: string | undefined): number | null {
-  const m = /^\s*(\d{1,2})\s*\./.exec(stage ?? "");
-  return m ? Number(m[1]) : null;
-}
-
-export function reachedStage(opp: Opportunity, target: { key: StageKey; minIndex: number }): boolean {
-  if (target.key === "venta" && isWonOpp(opp)) return true;
-  const idx = stageIndexOf(opp.stage);
-  return idx !== null && idx >= target.minIndex;
-}
+// "Alcanzó la etapa" vive en lib/desarrollo-funnel.ts: el embudo de GENERAL y
+// el costo por etapa tienen que decir lo mismo de la misma oportunidad. Se
+// re-exportan para que verify-meta-attribution siga leyéndolas de aquí.
+export { reachedStage, stageIndexOf };
 
 function inRange(day: string, range: { start: string; end: string } | null): boolean {
   if (!range) return true;

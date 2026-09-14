@@ -22,6 +22,7 @@
     "verify:task-backlog": "tsx scripts/verify-task-backlog.ts",
     "verify:stale-matrix": "tsx scripts/verify-stale-matrix.ts",
     "verify:assignment": "tsx scripts/verify-assignment-funnel.ts",
+    "verify:desarrollo-funnel": "tsx scripts/verify-desarrollo-funnel.ts",
     "verify:sync-store": "tsx --env-file-if-exists=.env.local scripts/verify-sync-store.ts",
     "verify:meta-oauth": "tsx scripts/verify-meta-oauth.ts",
     "verify:meta-connection-store": "tsx --env-file-if-exists=.env.local scripts/verify-meta-connection-store.ts",

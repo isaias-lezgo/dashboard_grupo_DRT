@@ -87,6 +87,7 @@ pnpm verify:lost-matrix  # lib/lost-reason-matrix.ts — cruce motivo de perdido
 pnpm verify:lost-cross   # lib/lost-cross-matrix.ts — cruce perdidas servicio/origen/canal
 pnpm verify:advisors     # lib/advisor-breakdown.ts — matriz asesor × etapa + cubetas de estatus
 pnpm verify:assignment   # lib/assignment-funnel.ts — universo sin-asesor vs. denominador del mes
+pnpm verify:desarrollo-funnel # lib/desarrollo-funnel.ts — recuentos por desarrollo + embudo de 6 pasos (cita = unión)
 pnpm verify:filters      # lib/panel-filters.ts — filtros globales de desarrollo y asesor
 pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/canal SIN agrupar grafías
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
@@ -271,6 +272,26 @@ reintroduce a `sucursalField`-style seam here.
   not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
   over **two of three** dimensions, with a per-axis switch; choosing the other axis's
   dimension **transposes** the table instead of forcing a third onto the other axis).
+- **GENERAL lleva una cabecera propia, arriba de "Oportunidades por estado"**: tres montajes
+  de `desarrollo-counts-chart.tsx` (Registros / Visitas / Ventas por desarrollo, una sola
+  agregación `buildDesarrolloCounts` para que las tres tarjetas ordenen igual) y
+  `stage-funnel-chart.tsx` (el embudo de seis pasos de la estrategia: leads → precalificados
+  `≥02` → citas `≥04` → visitas `≥05` → apartados `≥07` → ventas `isWonOpp`). Solo en GENERAL,
+  como el cruce de perdidas. Reglas que no hay que "arreglar":
+  - **"Alcanzó la etapa" es el prefijo numérico de la etapa ACTUAL** (`stageIndexOf` /
+    `reachedStage`, ahora en `lib/desarrollo-funnel.ts`; `meta-attribution.ts` las importa de
+    ahí). Una perdida en `05.` sí visitó. **Venta es `isWonOpp()` y nada más** — una perdida
+    sentada en `08. Venta` no es venta cerrada, aunque el prefijo diga que sí.
+  - **"Citas agendadas" es una UNIÓN**: etapa `≥04` **o** el contacto tiene una cita en el
+    objeto Citas del CRM (`allAppointments`, sin filtrar por fecha, cualquier estatus). El ⓘ
+    de esa fila desglosa cuánto aportó cada fuente (medido 2026-09-14: 284 por etapa, 30
+    solo por cita). Pedido explícito del cliente; no lo reduzcas a una sola señal.
+  - **El embudo es monótono por construcción**: alcanzar un paso implica los anteriores, así
+    que una ganada por `status` en `01.` cuenta en los seis. Por la misma razón "Visitas por
+    desarrollo" cuenta `≥05` **o ganada** — sin eso la tarjeta y "Visitas realizadas" daban
+    255 vs 250 lado a lado.
+  - Los porcentajes de las barras son sobre leads totales; el paso-a-paso va como texto.
+    ~1% de cierre es normal aquí (ver "The shape of this account").
 - **`lost-cross-matrix.tsx`'s third axis is `Desarrollo`, not `Servicio`.** The dimension it
   replaced read a custom field that does not exist in this account. Desarrollo comes from
   the **pipeline**, which makes it the only one of the three axes populated 100% of the
@@ -582,6 +603,7 @@ bug class these modules were extracted to kill.
 | `lib/lost-cross-matrix.ts` | el cruce de perdidas sobre dos de tres dimensiones (servicio / origen / canal); **ambos** ejes pueden ser multi-valor |
 | `lib/advisor-breakdown.ts` | la matriz asesor × etapa del embudo + el desglose de estatus por asesor |
 | `lib/assignment-funnel.ts` | el universo de las oportunidades sin asesor, por mes y por estatus, con el total del mes como denominador |
+| `lib/desarrollo-funnel.ts` | "alcanzó la etapa" por prefijo numérico (`stageIndexOf` / `reachedStage`), los recuentos registros/visitas/ventas por desarrollo y el embudo de seis pasos con la cita como unión etapa ∪ objeto Citas |
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
 | `lib/meta-normalize.ts` | de la respuesta cruda de Graph a `MetaAdsData`; ventana de historia y chunks por mes |
