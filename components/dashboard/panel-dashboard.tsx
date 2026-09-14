@@ -149,8 +149,9 @@ export function PanelDashboard({
       </div>
       <LostReasonMatrix {...shared} />
       {/* Las mismas perdidas, la otra pregunta: no por qué se cayeron sino por
-          dónde habían llegado. */}
-      <LostCrossMatrix {...shared} />
+          dónde habían llegado. Solo en GENERAL: dentro de un desarrollo el eje
+          Desarrollo tiene una sola columna y el cruce deja de ser un cruce. */}
+      {panel === "general" && <LostCrossMatrix {...shared} />}
     </DashboardShell>
   )
 }
