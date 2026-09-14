@@ -251,8 +251,7 @@ reintroduce a `sucursalField`-style seam here.
 - **Every tab renders the same chart set**, from the single `panel-dashboard.tsx`, which
   builds one `shared` object and spreads it into every per-opportunity chart. Keep that
   pattern rather than re-listing props per chart. The mounted charts:
-  `opportunity-status-chart.tsx`, `opportunity-win-rate-chart.tsx`,
-  `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
+  `opportunity-status-chart.tsx`, `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
   **exclusively** the opportunities with no `assignedTo`, stacked by creation month and
   split by status. The assigned ones aren't drawn — "Oportunidades por estado" and the
   advisor table cover those — but they DO count toward `monthTotal`, the denominator of
@@ -307,6 +306,10 @@ reintroduce a `sucursalField`-style seam here.
     add it as a fourth entry and **measure its capture rate first** — the fields this team
     fills at closing sit around 5%, and a near-empty axis reads as a broken cross, not as a
     finding.
+- **`opportunity-win-rate-chart.tsx` ("Oportunidades creadas y % ganadas") was removed on
+  2026-09-14 at the client's request.** The funnel of the GENERAL header already states the
+  close rate, and the per-month cohort line read as noise at ~1%. Recoverable from git
+  history (commit before the removal) if they want it back.
 - **Charts deliberately absent, and why.** `sales-pivot-table.tsx`,
   `sales-by-dimension-chart.tsx` and `lost-by-dimension-chart.tsx` were **removed** in the
   DRT fork. All three key off `Fecha de Cierre` × sucursal × servicio, and in this account

@@ -15,7 +15,6 @@ import type { ActivityStatus } from "@/hooks/use-conversation-activity"
 import type { PanelId } from "@/lib/panel-scope"
 import { DashboardShell } from "./dashboard-ui"
 import { OpportunityStatusChart } from "./opportunity-status-chart"
-import { OpportunityWinRateChart } from "./opportunity-win-rate-chart"
 import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-chart"
 import { AdvisorStageTable } from "./advisor-stage-table"
 import { AssignmentFunnelChart } from "./assignment-funnel-chart"
@@ -148,7 +147,6 @@ export function PanelDashboard({
         </>
       )}
       <OpportunityStatusChart {...shared} />
-      <OpportunityWinRateChart {...shared} />
       {/* De las oportunidades de DRT ~17% no tienen asesor asignado, así que
           esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
       <AssignmentFunnelChart {...shared} />
