@@ -25,6 +25,26 @@ async function main() {
     )
   `;
 
+  // La conexión con Meta por cliente y producto ("ads" hoy, "whatsapp" después).
+  // A diferencia de project_sync, esta fila NO es desechable: si se borra hay que
+  // volver a apretar "Conectar con Meta".
+  await sql`
+    CREATE TABLE IF NOT EXISTS meta_connection (
+      client_id           text        NOT NULL,
+      product             text        NOT NULL,
+      token_encrypted     bytea       NOT NULL,
+      token_kind          text        NOT NULL,
+      token_expires_at    timestamptz,
+      business_id         text,
+      connected_by        text,
+      available_accounts  jsonb       NOT NULL,
+      selected_accounts   jsonb       NOT NULL,
+      connected_at        timestamptz NOT NULL,
+      updated_at          timestamptz NOT NULL,
+      PRIMARY KEY (client_id, product)
+    )
+  `;
+
   const rows = await sql`
     SELECT column_name, data_type
       FROM information_schema.columns
@@ -33,6 +53,15 @@ async function main() {
   `;
   console.log("✅ project_sync lista:");
   for (const r of rows) console.log(`   ${r.column_name} ${r.data_type}`);
+
+  const metaRows = await sql`
+    SELECT column_name, data_type
+      FROM information_schema.columns
+     WHERE table_name = 'meta_connection'
+     ORDER BY ordinal_position
+  `;
+  console.log("✅ meta_connection lista:");
+  for (const r of metaRows) console.log(`   ${r.column_name} ${r.data_type}`);
 }
 
 main().catch((err) => {
