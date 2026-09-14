@@ -1,12 +1,14 @@
-// Agregación detrás de "Oportunidades por asesor": la matriz asesor × etapa del
-// embudo, más el desglose de estatus (ganada / abierta / perdida) de cada asesor.
+// Agregación detrás de "Oportunidades por asesor" / "Oportunidades por
+// desarrollo": la matriz fila × etapa del embudo, más el desglose de estatus
+// (ganada / abierta / perdida) de cada fila. La fila es un parámetro: el asesor
+// asignado en las pestañas de desarrollo, el desarrollo (= el embudo) en GENERAL.
 //
 // Puro y sin React, igual que lib/opportunity-breakdown.ts y por la misma razón:
 // un conteo silenciosamente mal aquí se ve idéntico a uno bien en la UI, así que
 // vive bajo scripts/verify-advisors.ts.
 import type { Opportunity, Pipeline } from "./types"
 import { statusBucket, STATUS_BUCKETS, type StatusBucket } from "./opportunity-breakdown"
-import { resolvePipelineId, type PanelId } from "./panel-scope"
+import { desarrolloOf, NO_DESARROLLO, resolvePipelineId, type PanelId } from "./panel-scope"
 
 /**
  * Fila de las oportunidades que nadie tiene asignadas. NO se descarta: en el
@@ -38,8 +40,9 @@ export interface AdvisorCell {
 }
 
 export interface AdvisorRow {
-  advisor: string
-  /** true solo en la fila NO_ADVISOR_LABEL, que se pinta distinto y va al final. */
+  /** El asesor o el desarrollo, según `rowOf`. */
+  label: string
+  /** true solo en la fila centinela ("Sin asesor" / "Sin desarrollo"), que se pinta distinto y va al final. */
   unassigned: boolean
   total: number
   oppIds: string[]
@@ -54,7 +57,7 @@ export interface AdvisorMatrix {
   /** Nombres de etapa en orden de embudo — el orden de las columnas. */
   stages: string[]
   rows: AdvisorRow[]
-  /** Fila de totales por columna; `advisor` vale "Total". */
+  /** Fila de totales por columna; `label` vale "Total". */
   totals: AdvisorRow
   /** Máximo de cada columna. La intensidad del mapa de calor se normaliza aquí. */
   stageMax: Record<string, number>
@@ -65,9 +68,9 @@ function stageKey(stage: string): string {
   return stage.trim().toLowerCase()
 }
 
-function emptyRow(advisor: string, stages: string[], unassigned = false): AdvisorRow {
+function emptyRow(label: string, stages: string[], unassigned = false): AdvisorRow {
   const row: AdvisorRow = {
-    advisor,
+    label,
     unassigned,
     total: 0,
     oppIds: [],
@@ -90,29 +93,72 @@ function emptyRow(advisor: string, stages: string[], unassigned = false): Adviso
  * Se prefiere la definición del embudo sobre lo que traigan las oportunidades
  * porque así una etapa sin ningún registro sigue apareciendo como columna vacía:
  * "nadie tiene nada en Negociación" es justamente el dato que se quiere ver.
+ *
+ * GENERAL no tiene embudo propio, pero las etapas son idénticas en los seis (la
+ * única diferencia es "Negocio perdido" / "Negocio Perdido", que `stageKey`
+ * funde), así que toma las del primer embudo que declare alguna. Sin eso las
+ * columnas de GENERAL salían en el orden en que aparecían en los datos.
  */
 export function panelStageOrder(
   pipelines: Pipeline[] | undefined,
   panel: PanelId
 ): string[] {
   const id = resolvePipelineId(pipelines, panel)
+  if (id === null) return pipelines?.find((p) => p.stages.length > 0)?.stages ?? []
   return pipelines?.find((p) => p.id === id)?.stages ?? []
+}
+
+export interface StageMatrixOptions {
+  /** La fila de una oportunidad; vacío ⇒ la fila centinela `missingLabel`. */
+  rowOf: (opp: Opportunity) => string | undefined
+  missingLabel: string
 }
 
 /**
  * Matriz asesor × etapa sobre `opps` (que ya deben venir acotadas al embudo del
- * panel — este módulo no filtra por pipeline).
- *
- * Reglas:
- * - El asesor es `opp.assignedTo`, que la ruta de sync ya resolvió de id a nombre.
- *   Vacío ⇒ fila "Sin asesor".
- * - Una etapa que traiga una oportunidad pero que el embudo ya no declare se
- *   agrega como columna extra al final, en vez de perder el registro.
- * - Las filas se ordenan por volumen descendente; "Sin asesor" siempre al final.
+ * panel — este módulo no filtra por pipeline). El asesor es `opp.assignedTo`,
+ * que la ruta de sync ya resolvió de id a nombre. Vacío ⇒ fila "Sin asesor".
  */
 export function buildAdvisorMatrix(
   opps: Opportunity[],
   stageOrder: string[]
+): AdvisorMatrix {
+  return buildStageMatrix(opps, stageOrder, {
+    rowOf: (o) => o.assignedTo,
+    missingLabel: NO_ADVISOR_LABEL,
+  })
+}
+
+/**
+ * Matriz desarrollo × etapa: la misma tabla para GENERAL, donde una fila por
+ * asesor tiene 24 renglones y la pregunta es otra — en qué etapa está parado
+ * cada embudo. El desarrollo se lee del pipeline, como en todo el panel, así
+ * que "Sin desarrollo" solo aparece si el sync no devolvió ese embudo.
+ */
+export function buildDesarrolloMatrix(
+  opps: Opportunity[],
+  stageOrder: string[],
+  pipelines: Pipeline[] | undefined
+): AdvisorMatrix {
+  return buildStageMatrix(opps, stageOrder, {
+    rowOf: (o) => {
+      const d = desarrolloOf(o, pipelines)
+      return d === NO_DESARROLLO ? undefined : d
+    },
+    missingLabel: NO_DESARROLLO,
+  })
+}
+
+/**
+ * Reglas comunes a las dos matrices:
+ * - Una etapa que traiga una oportunidad pero que el embudo ya no declare se
+ *   agrega como columna extra al final, en vez de perder el registro.
+ * - Las filas se ordenan por volumen descendente; la centinela siempre al final.
+ */
+export function buildStageMatrix(
+  opps: Opportunity[],
+  stageOrder: string[],
+  { rowOf, missingLabel }: StageMatrixOptions
 ): AdvisorMatrix {
   // Etapas del embudo, más las que aparezcan en los datos y no estén declaradas.
   const stages = [...stageOrder]
@@ -126,14 +172,14 @@ export function buildAdvisorMatrix(
     stages.push(label)
   }
 
-  const byAdvisor = new Map<string, AdvisorRow>()
+  const byLabel = new Map<string, AdvisorRow>()
 
   for (const o of opps) {
-    const name = (o.assignedTo ?? "").trim() || NO_ADVISOR_LABEL
-    let row = byAdvisor.get(name)
+    const name = (rowOf(o) ?? "").trim() || missingLabel
+    let row = byLabel.get(name)
     if (!row) {
-      row = emptyRow(name, stages, name === NO_ADVISOR_LABEL)
-      byAdvisor.set(name, row)
+      row = emptyRow(name, stages, name === missingLabel)
+      byLabel.set(name, row)
     }
 
     const stage = stageByKey.get(stageKey((o.stage ?? "").trim() || OTHER_STAGE_LABEL))!
@@ -149,9 +195,9 @@ export function buildAdvisorMatrix(
     row.oppIds.push(o.id)
   }
 
-  const rows = [...byAdvisor.values()].sort((a, b) => {
+  const rows = [...byLabel.values()].sort((a, b) => {
     if (a.unassigned !== b.unassigned) return a.unassigned ? 1 : -1
-    return b.total - a.total || a.advisor.localeCompare(b.advisor, "es")
+    return b.total - a.total || a.label.localeCompare(b.label, "es")
   })
 
   for (const r of rows) {
@@ -177,8 +223,8 @@ export function buildAdvisorMatrix(
   }
   totals.winRate = totals.total === 0 ? 0 : (totals.status.ganada.count / totals.total) * 100
 
-  // El máximo excluye la fila de totales (siempre sería ella) y también la de
-  // "Sin asesor": con 1 400 perdidas sin asignar, normalizar contra esa columna
+  // El máximo excluye la fila de totales (siempre sería ella) y también la
+  // centinela: con 1 400 perdidas sin asignar, normalizar contra esa columna
   // dejaría a los tres asesores en un gris indistinguible.
   const stageMax: Record<string, number> = {}
   for (const s of stages) {

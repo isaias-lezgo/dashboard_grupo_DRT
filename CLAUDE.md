@@ -261,7 +261,12 @@ reintroduce a `sucursalField`-style seam here.
   opportunities are orphaned, so this card is the headline finding, not a footnote**),
   `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
   normalized **per column** and the "Sin asesor" row stays outside that normalization and
-  outside the tint, because it is an order of magnitude larger),
+  outside the tint, because it is an order of magnitude larger. **In GENERAL the row is the
+  desarrollo instead** — "Oportunidades por desarrollo", `buildDesarrolloMatrix` — because
+  24 advisors over six mixed embudos answer a different question; inside a desarrollo tab
+  "por desarrollo" would be a single row, so those keep the advisor. Same component, same
+  `buildStageMatrix` with a `rowOf` resolver; `panelStageOrder("general")` borrows the
+  column order from the first pipeline with stages, since all six declare the same ones),
   `stale-opportunity-matrix.tsx` ("Oportunidades sin atención": days without a stage change
   × days without an outbound message, over the open opportunities of the live funnel),
   `task-backlog-chart.tsx` ("Tareas pendientes por asesor", stacked by due date), two

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Users } from "lucide-react"
+import { Building2, Users } from "lucide-react"
 import type {
   Appointment,
   Call,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/opportunity-breakdown"
 import {
   buildAdvisorMatrix,
+  buildDesarrolloMatrix,
   panelStageOrder,
   stageKind,
   type AdvisorCell,
@@ -141,7 +142,11 @@ export interface AdvisorStageTableProps {
  * abiertas —dónde tiene parada su cartera cada quien, y en qué estatus— sin
  * tener que abrir el embudo persona por persona en el CRM.
  *
- * Los dos paneles montan el mismo componente; solo cambia el embudo.
+ * Las siete pestañas montan el mismo componente. En GENERAL la fila es el
+ * DESARROLLO ("Oportunidades por desarrollo"): ahí una tabla por asesor tiene
+ * 24 renglones sobre seis embudos mezclados, y la pregunta del cliente es en
+ * qué etapa está parado cada desarrollo. Dentro de un desarrollo la fila
+ * vuelve a ser el asesor, porque "por desarrollo" tendría una sola.
  */
 export function AdvisorStageTable({
   panel,
@@ -159,11 +164,21 @@ export function AdvisorStageTable({
 }: AdvisorStageTableProps) {
   const [drill, setDrill] = useState<DrillState>(DRILL_CLOSED)
   const scope = PANEL_SCOPES[panel]
+  const byDesarrollo = panel === "general"
 
   const matrix = useMemo(() => {
     const scoped = scopeOpportunities(opportunities, panel, pipelines)
-    return buildAdvisorMatrix(scoped, panelStageOrder(pipelines, panel))
-  }, [opportunities, panel, pipelines])
+    const order = panelStageOrder(pipelines, panel)
+    return byDesarrollo
+      ? buildDesarrolloMatrix(scoped, order, pipelines)
+      : buildAdvisorMatrix(scoped, order)
+  }, [opportunities, panel, pipelines, byDesarrollo])
+
+  // Los textos que cambian con la fila: el sustantivo del pie (singular y
+  // plural, porque "desarrollo" no pluraliza como "asesor") y el encabezado
+  // de los drills de la fila Total.
+  const [dimOne, dimMany] = byDesarrollo ? ["desarrollo", "desarrollos"] : ["asesor", "asesores"]
+  const allLabel = byDesarrollo ? "Todos los desarrollos" : "Todos los asesores"
 
   const oppById = useMemo(
     () => new Map(allOpportunities.map((o) => [o.id, o])),
@@ -179,35 +194,48 @@ export function AdvisorStageTable({
     setDrill({
       open: true,
       title,
-      subtitle: `Embudo ${scope.label}${note ? ` · ${note}` : ""}`,
+      subtitle: `${byDesarrollo ? "Todos los embudos" : `Embudo ${scope.label}`}${note ? ` · ${note}` : ""}`,
       opportunities: items,
     })
   }
 
   const { stages, rows, totals, stageMax } = matrix
-  const advisorCount = rows.filter((r) => !r.unassigned).length
+  const rowCount = rows.filter((r) => !r.unassigned).length
   const stickyCol = "sticky left-0 z-20 bg-card"
 
   return (
     <DashboardCard>
       <ChartCardHeader
-        title="Oportunidades por asesor"
-        icon={Users}
+        title={byDesarrollo ? "Oportunidades por desarrollo" : "Oportunidades por asesor"}
+        icon={byDesarrollo ? Building2 : Users}
         total={totals.total}
         actions={
           <ScopePill
-            label="Asesor × etapa"
+            label={byDesarrollo ? "Desarrollo × etapa" : "Asesor × etapa"}
             tooltip={
               <>
-                Oportunidades del embudo <strong>{scope.label}</strong> creadas en el periodo,
-                repartidas por el asesor asignado y por la etapa en la que están{" "}
-                <em>hoy</em>. El sombreado compara <strong>dentro de cada columna</strong>,
-                nunca entre columnas. La barra de estatus sigue la regla del panel:{" "}
-                <strong>ganada</strong> incluye las que se registran moviéndolas a una etapa
-                &ldquo;Ganado&rdquo; sin cambiar su estatus y <strong>perdida</strong> junta
-                perdidas y abandonadas, así que puede no cuadrar con las columnas Ganado /
-                Perdido cuando etapa y estatus se contradicen. Solo se listan los asesores con
-                al menos una oportunidad en este embudo.
+                {byDesarrollo ? (
+                  <>
+                    Oportunidades de <strong>todos los embudos</strong> creadas en el periodo,
+                    repartidas por desarrollo (el embudo en el que viven) y por la etapa en
+                    la que están <em>hoy</em>.
+                  </>
+                ) : (
+                  <>
+                    Oportunidades del embudo <strong>{scope.label}</strong> creadas en el
+                    periodo, repartidas por el asesor asignado y por la etapa en la que están{" "}
+                    <em>hoy</em>.
+                  </>
+                )}{" "}
+                El sombreado compara <strong>dentro de cada columna</strong>, nunca entre
+                columnas. La barra de estatus sigue la regla del panel: <strong>ganada</strong>{" "}
+                incluye las que se registran moviéndolas a &ldquo;08. Venta&rdquo; sin cambiar
+                su estatus y <strong>perdida</strong> junta perdidas y abandonadas, así que
+                puede no cuadrar con las columnas Venta / Negocio perdido cuando etapa y
+                estatus se contradicen.{" "}
+                {byDesarrollo
+                  ? "Solo se listan los desarrollos con al menos una oportunidad en el periodo."
+                  : "Solo se listan los asesores con al menos una oportunidad en este embudo."}
               </>
             }
           />
@@ -230,7 +258,7 @@ export function AdvisorStageTable({
                 </span>
               ))}
               <span className="ml-auto tabular-nums">
-                {advisorCount} {advisorCount === 1 ? "asesor" : "asesores"} ·{" "}
+                {rowCount} {rowCount === 1 ? dimOne : dimMany} ·{" "}
                 {n(totals.status.ganada.count)} ganadas de {n(totals.total)}
               </span>
             </div>
@@ -245,7 +273,7 @@ export function AdvisorStageTable({
                         "border-b border-r border-border px-3 py-2 text-left font-semibold"
                       )}
                     >
-                      Asesor
+                      {byDesarrollo ? "Desarrollo" : "Asesor"}
                     </th>
                     {stages.map((stage) => (
                       <th
@@ -268,7 +296,7 @@ export function AdvisorStageTable({
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.advisor}>
+                    <tr key={row.label}>
                       <th
                         scope="row"
                         className={cn(
@@ -276,14 +304,14 @@ export function AdvisorStageTable({
                           "max-w-[14rem] truncate border-b border-r border-border px-3 py-1.5 text-left font-medium",
                           row.unassigned && cn("italic", MISSING_TEXT)
                         )}
-                        title={row.advisor}
+                        title={row.label}
                       >
-                        {row.advisor}
+                        {row.label}
                       </th>
 
                       {stages.map((stage) => {
                         const cell = row.stages[stage] ?? { count: 0, oppIds: [] }
-                        // "Sin asesor" no se tiñe: es otro orden de magnitud y
+                        // La fila centinela no se tiñe: es otro orden de magnitud y
                         // saturaría la columna entera, que es justo lo que la
                         // normalización por columna intenta evitar.
                         const alpha = row.unassigned
@@ -293,7 +321,7 @@ export function AdvisorStageTable({
                           <td
                             key={stage}
                             onClick={() =>
-                              openDrill(cell, `${row.advisor} — ${stage}`, `${n(cell.count)} oportunidades`)
+                              openDrill(cell, `${row.label} — ${stage}`, `${n(cell.count)} oportunidades`)
                             }
                             style={{
                               backgroundColor: `rgba(${STAGE_HEAT_RGB[stageKind(stage)]}, ${alpha})`,
@@ -318,7 +346,7 @@ export function AdvisorStageTable({
                         onClick={() =>
                           openDrill(
                             { count: row.total, oppIds: row.oppIds },
-                            `${row.advisor} — todas las etapas`,
+                            `${row.label} — todas las etapas`,
                             `${n(row.total)} oportunidades`
                           )
                         }
@@ -336,7 +364,7 @@ export function AdvisorStageTable({
                           onSegment={(bucket) =>
                             openDrill(
                               row.status[bucket],
-                              `${row.advisor} — ${STATUS_LABELS[bucket]}`,
+                              `${row.label} — ${STATUS_LABELS[bucket]}`,
                               `${n(row.status[bucket].count)} oportunidades`
                             )
                           }
@@ -367,7 +395,7 @@ export function AdvisorStageTable({
                         onClick={() =>
                           openDrill(
                             totals.stages[stage],
-                            `Todos los asesores — ${stage}`,
+                            `${allLabel} — ${stage}`,
                             `${n(totals.stages[stage].count)} oportunidades`
                           )
                         }
@@ -390,7 +418,7 @@ export function AdvisorStageTable({
                         onSegment={(bucket) =>
                           openDrill(
                             totals.status[bucket],
-                            `Todos los asesores — ${STATUS_LABELS[bucket]}`,
+                            `${allLabel} — ${STATUS_LABELS[bucket]}`,
                             `${n(totals.status[bucket].count)} oportunidades`
                           )
                         }

@@ -10,8 +10,10 @@
 // Envuelto en main() en vez de top-level await: este paquete es CJS.
 import assert from "node:assert/strict";
 import type { Opportunity, Pipeline } from "../lib/types";
+import { NO_DESARROLLO } from "../lib/panel-scope";
 import {
   buildAdvisorMatrix,
+  buildDesarrolloMatrix,
   NO_ADVISOR_LABEL,
   OTHER_STAGE_LABEL,
   panelStageOrder,
@@ -36,11 +38,12 @@ function opp(o: {
   advisor?: string;
   stage?: string;
   status?: Opportunity["status"];
+  pipelineId?: string;
 }): Opportunity {
   return {
     id: `o${++seq}`,
     name: `Opp ${seq}`,
-    pipelineId: "MiATYfkJWklaXqYc7hOr",
+    pipelineId: o.pipelineId ?? "MiATYfkJWklaXqYc7hOr",
     pipelineStageId: "stage-1",
     status: o.status ?? "open",
     createdAt: "2026-06-15T12:00:00.000Z",
@@ -53,8 +56,8 @@ function opp(o: {
 }
 
 const rowFor = (m: ReturnType<typeof buildAdvisorMatrix>, advisor: string) => {
-  const r = m.rows.find((x) => x.advisor === advisor);
-  assert.ok(r, `existe la fila "${advisor}" (hay: ${m.rows.map((x) => x.advisor).join(", ")})`);
+  const r = m.rows.find((x) => x.label === advisor);
+  assert.ok(r, `existe la fila "${advisor}" (hay: ${m.rows.map((x) => x.label).join(", ")})`);
   return r!;
 };
 
@@ -126,10 +129,10 @@ function main() {
       STAGES
     );
     const last = m.rows[m.rows.length - 1];
-    assert.equal(last.advisor, NO_ADVISOR_LABEL);
+    assert.equal(last.label, NO_ADVISOR_LABEL);
     assert.equal(last.unassigned, true);
     assert.equal(last.total, 6, "sin campo y campo en blanco son lo mismo");
-    assert.equal(m.rows[0].advisor, "Zulema Silva", "Sin asesor no compite por el primer lugar");
+    assert.equal(m.rows[0].label, "Zulema Silva", "Sin asesor no compite por el primer lugar");
     assert.equal(m.totals.total, 7);
   }
 
@@ -221,7 +224,7 @@ function main() {
       ],
       STAGES
     );
-    assert.deepEqual(m.rows.map((r) => r.advisor), [
+    assert.deepEqual(m.rows.map((r) => r.label), [
       "Dariana Turrubiates",
       "Diana Arbelaez",
       "Zulema Silva",
@@ -238,6 +241,55 @@ function main() {
     assert.deepEqual(panelStageOrder(pipelines, "canadas"), STAGES, "gana el match por nombre");
     assert.deepEqual(panelStageOrder(pipelines, "atria"), ["00. Recibido", "08. Venta"]);
     assert.deepEqual(panelStageOrder(undefined, "canadas"), [], "sin embudos, las columnas salen de los datos");
+    // GENERAL no tiene embudo: toma el orden del primero que declare etapas,
+    // porque las etapas son las mismas en los seis.
+    assert.deepEqual(panelStageOrder(pipelines, "general"), STAGES);
+    assert.deepEqual(
+      panelStageOrder([{ id: "x", name: "Vacío", stages: [] }, ...pipelines], "general"),
+      STAGES,
+      "un embudo sin etapas no manda las columnas a los datos"
+    );
+    assert.deepEqual(panelStageOrder(undefined, "general"), []);
+  }
+
+  // 10b. Matriz por desarrollo (GENERAL): la fila es el NOMBRE del embudo, se
+  //      ordena por volumen, y un embudo que el sync no devolvió cae en
+  //      "Sin desarrollo", al final y marcado como centinela.
+  {
+    const pipelines: Pipeline[] = [
+      { id: "p-canadas", name: "Cañadas", stages: STAGES },
+      { id: "p-atria", name: "Atria", stages: STAGES },
+    ];
+    const m = buildDesarrolloMatrix(
+      [
+        opp({ pipelineId: "p-atria", stage: "Propuesta" }),
+        opp({ pipelineId: "p-atria", stage: "Ganado", status: "won" }),
+        opp({ pipelineId: "p-canadas", stage: "Perdido", status: "lost" }),
+        ...Array.from({ length: 3 }, () => opp({ pipelineId: "p-huerfano" })),
+      ],
+      STAGES,
+      pipelines
+    );
+    assert.deepEqual(m.rows.map((r) => r.label), ["Atria", "Cañadas", NO_DESARROLLO]);
+    assert.equal(m.rows[2].unassigned, true, "Sin desarrollo es la centinela aunque sea la más grande");
+    assert.equal(rowFor(m, "Atria").stages["Propuesta"].count, 1);
+    assert.equal(rowFor(m, "Atria").status.ganada.count, 1);
+    assert.equal(rowFor(m, "Atria").winRate, 50);
+    assert.equal(m.totals.total, 6);
+    assert.equal(m.stageMax["Nuevo Lead"], 0, "la centinela no manda el máximo de la columna");
+    assert.equal(m.stageMax["Propuesta"], 1);
+    // El asesor NO influye en la fila: dos asesores del mismo embudo son una fila.
+    const m2 = buildDesarrolloMatrix(
+      [
+        opp({ pipelineId: "p-atria", advisor: "Zulema Silva" }),
+        opp({ pipelineId: "p-atria", advisor: "Diana Arbelaez" }),
+        opp({ pipelineId: "p-atria" }),
+      ],
+      STAGES,
+      pipelines
+    );
+    assert.equal(m2.rows.length, 1);
+    assert.equal(rowFor(m2, "Atria").total, 3, "sin asesor no abre una fila aparte en el modo desarrollo");
   }
 
   // 11. Conjunto vacío.
