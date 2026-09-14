@@ -17,30 +17,35 @@ and not a subscription, so the funnel that matters is
 deposit) is the hinge: it is the first real commitment, and almost everyone who reaches it
 closes. When proposing charts, the Visita → Apartado step says more than any other.
 
-**Six developments, and each one IS a CRM pipeline.** Measured 2026-08-24:
+**Six developments, and each one IS a CRM pipeline.** Measured 2026-09-14 in the panel
+(2026-08-24 in parentheses):
 
-| Desarrollo | Pipeline id | Oportunidades |
-|---|---|---|
-| Cañadas | `ChCZUhFDe5m0RSNp4qbb` | 4,490 |
-| La Sierra | `gRHIvjxjQ2vvHSXQjfC2` | 1,979 |
-| Atria | `0HGe4sGXe7v6Keo2Fk7v` | 1,968 |
-| Saggita | `5FZvtr1HjvpLDXjcHxfx` | 1,872 |
-| Palmyra | `jNQOWHy6JLW5Mbb18l7t` | **0** → ~1,559 (CSV, 2026-08-28) |
-| Zanda | `1f8VurvKrPgbwYrmBo2m` | **0** → ~1,433 (CSV, 2026-08-28) |
+| Desarrollo | Pipeline id | Oportunidades | Visitas (≥05 o ganada) | Ventas |
+|---|---|---|---|---|
+| Cañadas | `ChCZUhFDe5m0RSNp4qbb` | 4,933 (4,490) | 47 | 32 |
+| La Sierra | `gRHIvjxjQ2vvHSXQjfC2` | 2,151 (1,979) | 6 | 5 |
+| Atria | `0HGe4sGXe7v6Keo2Fk7v` | 2,108 (1,968) | 87 | 22 |
+| Saggita | `5FZvtr1HjvpLDXjcHxfx` | 1,902 (1,872) | 50 | 27 |
+| Palmyra | `jNQOWHy6JLW5Mbb18l7t` | 1,725 (0) | 33 | 14 |
+| Zanda | `1f8VurvKrPgbwYrmBo2m` | 1,461 (0) | 32 | 22 |
 
-Palmyra and Zanda are real pipelines that have not launched. They get their own tabs and
-render honest empty states — do **not** hide them. **Since 2026-08-28 they are no longer
-empty**: ~3,000 records were bulk-loaded by CSV on Aug 28-31 (`attributions[].medium ===
-"csv_import"`, no `source`, no ad id). Those are a database, not pauta leads — see
-"Meta Ads" for the `notPauta` bucket that keeps them out of cost-per-lead. Re-measure the
-table above before trusting it.
+Palmyra and Zanda were empty pipelines until 2026-08-28, when ~3,000 records were
+bulk-loaded by CSV on Aug 28-31 (`attributions[].medium === "csv_import"`, no `source`,
+no ad id). Those are a database, not pauta leads — see "Meta Ads" for the `notPauta`
+bucket that keeps them out of cost-per-lead. Their visitas/ventas came in with the CSV,
+already at a late stage. Re-measure the table above before trusting it.
 
 **The shape of this account, and what it implies for charts.** All figures measured
 2026-08-24 against production; re-measure before trusting them, but the orders of
 magnitude are the point:
 
 - **10,309 oportunidades · 11,906 contactos · 34 usuarios** (~24 of them advisors who
-  actually carry opportunities).
+  actually carry opportunities). **Re-measured 2026-09-14: 14,280 oportunidades · 15,850
+  contactos · 10,095 registros Pauta**; the jump is mostly the Palmyra/Zanda CSV load.
+- **The six-step funnel, 2026-09-14, all time** (`stage-funnel-chart.tsx`): 14,280 leads →
+  706 precalificados (≥02, 4.9%) → 314 citas (≥04 ∪ cita en el CRM) → 255 visitas (≥05)
+  → 142 apartados (≥07) → **122 ventas** (`isWonOpp`, 0.9%). Visita → Apartado is 55.7%
+  and Apartado → Venta 85.9%: once someone deposits, they close.
 - **The funnel is high-volume and low-conversion, and that is normal here**: 2,923 open,
   7,303 lost, 55 `status: "won"`, 28 abandoned. **Never report ~0.5% conversion as an
   anomaly or a performance problem without that context.**
@@ -227,10 +232,12 @@ Consequences to keep in mind when building charts:
   panels. That is not double-counting to fix — they are comparing developments.
 - A contact with **no** opportunity belongs to no pipeline, so it can't be scoped to any
   desarrollo — but it is **never silently dropped**. Those contacts are leads that
-  nobody has moved into an embudo yet, which is exactly the leak worth watching. Surface
-  them in a **card at the top of the panel** ("Contactos sin oportunidad" — count +
-  drill-down to the list), above the pipeline-scoped charts, and keep them **out** of the
-  chart aggregates so the funnel numbers stay honest.
+  nobody has moved into an embudo yet, which is exactly the leak worth watching. **That
+  card does not exist yet** — the only place they surface today is the footnote of
+  "Tareas pendientes por asesor". When it is built, it goes as a **card at the top of the
+  panel** ("Contactos sin oportunidad" — count + drill-down to the list), above the
+  GENERAL header and the pipeline-scoped charts, and stays **out** of the chart
+  aggregates so the funnel numbers stay honest.
 - The pipeline scope is applied **before** the date filter conceptually, but both are just
   filters over the same arrays; order doesn't matter as long as drill-downs still join
   against the unfiltered `all*` sets (see "Drill-downs" below).
@@ -248,9 +255,22 @@ reintroduce a `sucursalField`-style seam here.
 
 ### Current state
 
-- **Every tab renders the same chart set**, from the single `panel-dashboard.tsx`, which
-  builds one `shared` object and spreads it into every per-opportunity chart. Keep that
-  pattern rather than re-listing props per chart. The mounted charts:
+- **Every tab renders from the single `panel-dashboard.tsx`**, which builds one `shared`
+  object and spreads it into every per-opportunity chart. Keep that pattern rather than
+  re-listing props per chart. The chart set is the same for the six desarrollo tabs;
+  **GENERAL differs in both directions** (gated on `panel === "general"` inside the same
+  file, never a second component):
+  - **Only in GENERAL**: the header (three `desarrollo-counts-chart.tsx` mounts +
+    `stage-funnel-chart.tsx`, see next bullet) and `lost-cross-matrix.tsx`.
+  - **Only in the desarrollo tabs**: `stale-opportunity-matrix.tsx` and
+    `task-backlog-chart.tsx` (removed from GENERAL 2026-09-14 at the client's request:
+    GENERAL is the business/funnel view, the advisor watch happens per desarrollo).
+  - **Removed everywhere 2026-09-14**: `opportunity-win-rate-chart.tsx` ("Oportunidades
+    creadas y % ganadas") — see "Charts deliberately absent".
+
+  The order, top to bottom: [GENERAL header] → `opportunity-status-chart.tsx` →
+  `assignment-funnel-chart.tsx` → `advisor-stage-table.tsx` → [stale matrix → task backlog]
+  → Origen / Canal pair → `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
   `opportunity-status-chart.tsx`, `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
   **exclusively** the opportunities with no `assignedTo`, stacked by creation month and
   split by status. The assigned ones aren't drawn — "Oportunidades por estado" and the
@@ -268,9 +288,9 @@ reintroduce a `sucursalField`-style seam here.
   `buildStageMatrix` with a `rowOf` resolver; `panelStageOrder("general")` borrows the
   column order from the first pipeline with stages, since all six declare the same ones),
   `stale-opportunity-matrix.tsx` ("Oportunidades sin atención": days without a stage change
-  × days without an outbound message, over the open opportunities of the live funnel),
-  `task-backlog-chart.tsx` ("Tareas pendientes por asesor", stacked by due date), two
-  mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`),
+  × days without an outbound message, over the open opportunities of the live funnel —
+  desarrollo tabs only), `task-backlog-chart.tsx` ("Tareas pendientes por asesor", stacked
+  by due date — desarrollo tabs only), two mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`),
   `lost-reason-matrix.tsx` ("Motivos de perdido": motivo × categoría, with its own local
   switch between Canal de Contacto and Origen de Lead — that switch is card-local state,
   not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
@@ -368,7 +388,10 @@ reintroduce a `sucursalField`-style seam here.
     tocó); un gráfico basado en él reportaría que todo se está trabajando.
 - Charts the shared panel had and this fork deleted are recoverable from git history / `upstream` — check there before rebuilding one from scratch.
 - The last tab (`DashboardTab` id `"conversations"`, labelled **"Asistente IA"**) renders `conversations-chat.tsx`. It is **permanently mounted and merely hidden** when inactive, so the chat history survives tab switches — do not make it conditional. It always sees the full, unfiltered dataset.
-- Both dashboards can **export a branded PDF report** of their own charts (see "PDF report export").
+- **The PDF report button is NOT mounted.** `components/dashboard/export-report-button.tsx`
+  and `lib/report.ts` still exist, but nothing renders the button in this fork; the only
+  live consumer of `lib/pdf/*` is the AI assistant's `create_pdf` tool (see "PDF report
+  export"). Mount the button again, don't rebuild it, if the client asks for the report.
 
 ### Data flow
 
@@ -394,9 +417,9 @@ hooks/fetch-stream.ts  (parses the NDJSON stream)
     ↓
 hooks/use-dashboard-data.ts  (custom streaming fetcher; exposes data, progress text, and structured per-dataset `steps`. No SWR/caching — refresh() re-runs the full sync)
     ↓
-app/page.tsx  (tab state, date-filter state, applies the client-side date-range filter, renders dashboard)
+app/page.tsx  (tab state, panel filters + date filter applied client-side, renders the active panel)
     ↓
-components/dashboard/{marketing,sales}-dashboard.tsx
+components/dashboard/panel-dashboard.tsx  (one component, `panel` prop; GENERAL and the six desarrollos)
 ```
 
 Beyond that main sync, the app has other routes under `app/api/`. **Every one that touches
@@ -502,11 +525,11 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   mismo string de `desarrolloOf` — para que `scopeMetaDaily` lo encuentre.
 - **Costo por etapa = cohorte de creación**: gasto de la ventana ÷ oportunidades creadas
   en la ventana (día local CDMX) que alcanzaron la etapa; "alcanzó" es el prefijo numérico
-  de la etapa actual ≥ el objetivo (una perdida en `05.` sí alcanzó Visita), Venta también
-  cuenta `isWonOpp`. Sin alcanzados → `null`, nunca `$0`.
+  de la etapa actual ≥ el objetivo (una perdida en `05.` sí alcanzó Visita) y **Venta es
+  `isWonOpp()` a secas** — `reachedStage` vive en `lib/desarrollo-funnel.ts` desde
+  2026-09-14 y la comparte con el embudo de GENERAL. Sin alcanzados → `null`, nunca `$0`.
 - **`isDePauta` reconoce `source: "Pauta …"`** (`"pauta"` en `PAID_SOCIAL_SOURCES`):
-  antes dependía solo de la relación con el objeto Pauta. `origen-de-lead-criteria.tsx`
-  ya no existe en este fork; la mención más abajo es herencia del panel compartido.
+  antes dependía solo de la relación con el objeto Pauta.
 - `lib/meta-client.ts` es **server-only** como `ghl-client.ts`. Lo puro está en
   `meta-normalize.ts` y `meta-attribution.ts`. Limitación: `daily.date` va en la zona
   horaria de la **cuenta publicitaria**; una cuenta fuera de `America/Mexico_City` desfasa
@@ -592,8 +615,8 @@ skill**. Load it before touching `app/api/chat`, `hooks/use-agent-loop.ts`,
 
 ### Shared domain rules (single sources of truth)
 
-Four small `lib/` modules exist so Marketing, Ventas, and the AI tools all agree on the
-same definitions. **Never re-inline any of this logic in a component** — a local copy
+The `lib/` modules below exist so every panel tab and the AI tools agree on the same
+definitions. **Never re-inline any of this logic in a component** — a local copy
 that drifts makes two tabs report different numbers for the same question, which is the
 bug class these modules were extracted to kill.
 
@@ -646,8 +669,8 @@ bug class these modules were extracted to kill.
   loose substring match, because field *names* differ per sub-account ("Origen de Lead"
   vs "Origen del Lead", "Tipo de pauta" vs "Tipo de anuncio"). **WhatsApp is deliberately
   absent** — it's a contact channel, not a lead origin, so a bare "whatsapp" stays in
-  "Otro". `components/dashboard/origen-de-lead-criteria.tsx` is the UI that explains these
-  rules to the user; keep the two in sync.
+  "Otro". (The shared panel had an `origen-de-lead-criteria.tsx` explaining these rules in
+  the UI; it does not exist in this fork.)
 - **`csv.ts`**: shared by the assistant's `export_csv` tool and the drill drawer's
   "Exportar" button (`lib/drill-export.ts`), so both files escape identically.
   `lib/download.ts` triggers the actual browser download for both.
@@ -655,7 +678,7 @@ bug class these modules were extracted to kill.
 #### Pauta (paid-advertising) classification
 
 `lib/pauta.ts` is the **single source of truth** for what counts as "de pauta", shared by
-the marketing charts and the AI tools. Do not re-inline this logic anywhere.
+the charts, `lib/meta-attribution.ts` and the AI tools. Do not re-inline this logic anywhere.
 
 - `isDePauta(opp, pautaContacts)` — a deliberate **union**: the contact is linked to a
   Pauta custom-object record **OR** the opportunity itself carries a paid-traffic
@@ -669,9 +692,10 @@ the marketing charts and the AI tools. Do not re-inline this logic anywhere.
 
 ### PDF report export
 
-Both dashboards export a branded PDF via `components/dashboard/export-report-button.tsx`;
-the same `create_pdf` spec/renderer backs the AI assistant's PDF tool, so changing
-`lib/pdf/*` affects both. **Brand rule**: `sanitizeBrand()` strips "GoHighLevel"/"GHL"
+`components/dashboard/export-report-button.tsx` exists but is **not mounted** in this fork
+(see "Current state"); today the only live consumer of the pipeline is the AI assistant's
+`create_pdf` tool. The button and the tool share the same spec/renderer, so changing
+`lib/pdf/*` affects both if the button comes back. **Brand rule**: `sanitizeBrand()` strips "GoHighLevel"/"GHL"
 from all rendered text — the platform is presented as "Lezgo Suite CRM", and the AI
 prompts carry the same rule. Everything else — `lib/report.ts`, the `analyze-report`
 Haiku pass and its token budget, the pdfmake renderers — is in the **`pdf-report`

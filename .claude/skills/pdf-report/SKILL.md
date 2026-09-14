@@ -5,7 +5,13 @@ description: How the branded PDF report export works — lib/report.ts composing
 
 # PDF report export
 
-Both dashboards export a branded PDF via `components/dashboard/export-report-button.tsx`.
+`components/dashboard/export-report-button.tsx` is the branded-PDF button, but in the DRT
+fork it is **not mounted anywhere** (verified 2026-09-14). `lib/report.ts` and the
+`analyze-report` route are therefore dormant; the only live consumer of `lib/pdf/*` is the
+AI assistant's `create_pdf` tool. If the client asks for the report, mount the button in
+`app/page.tsx` and rebuild `lib/report.ts`'s sections around the current chart set
+(`lib/desarrollo-funnel.ts`, `lib/opportunity-breakdown.ts`, …) — the section list it
+composes still describes the old marketing/ventas panels.
 
 - `lib/report.ts` composes a `ReportInput` (KPIs + `ReportSection[]`) from the dashboard's
   **already-computed aggregates** — deterministic code, not the model.
