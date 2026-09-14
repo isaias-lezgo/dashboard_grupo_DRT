@@ -146,11 +146,11 @@ export function PanelDashboard({
           <StageFunnelChart {...shared} allAppointments={allAppointments} />
         </>
       )}
-      <OpportunityStatusChart {...shared} />
+      <AdvisorStageTable {...shared} />
       {/* De las oportunidades de DRT ~17% no tienen asesor asignado, así que
           esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
       <AssignmentFunnelChart {...shared} />
-      <AdvisorStageTable {...shared} />
+
       {/* Los dos gráficos de vigilancia de asesoras van solo por desarrollo
           (pedido del cliente, 2026-09-14): en GENERAL la vista es de embudo y
           negocio, no de operación; la vigilancia se hace en cada desarrollo. */}
