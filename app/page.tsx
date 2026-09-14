@@ -90,6 +90,7 @@ const PANEL_MARKS: Partial<Record<PanelId, { src: string; w: number; h: number }
   atria: { src: "/atria-mark.png", w: 70, h: 64 },
   canadas: { src: "/canadas-mark.png", w: 205, h: 64 },
   lasierra: { src: "/lasierra-mark.png", w: 24, h: 32 },
+  palmyra: { src: "/palmyra-mark.png", w: 66, h: 64 },
   saggita: { src: "/saggita-mark.png", w: 48, h: 64 },
   zanda: { src: "/zanda-mark.png", w: 68, h: 64 },
 }

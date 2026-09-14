@@ -741,9 +741,9 @@ An HTTP MCP server (`ghl-mcp`, configured in `.mcp.json`) connects directly to G
   favicon o el isotipo del sitio de cada desarrollo, recortadas al trazo. Se guardan con
   su **proporción real**, no cuadradas, y la pestaña las dibuja con `h-4 w-auto
   max-w-[26px]`: el isotipo de Cañadas es 3.2:1 y dentro de una caja cuadrada de 16px
-  quedaba en una franja de 5px, invisible. **Palmyra no tiene marca a propósito** — su
-  sitio responde 403 y lo único publicado es una tarjeta de marketing con un sello
-  "PRÓXIMAMENTE"; cae al icono genérico hasta que el desarrollo arranque.
+  quedaba en una franja de 5px, invisible. La de **Palmyra** no salió de su sitio (responde
+  403): la mandó el cliente por WhatsApp el 2026-08-27 y se recortó a la rama de olivo del
+  logotipo, sin el texto "PALMYRA RESIDENCIAL".
 
 **Chart conventions** — apply to every new chart:
 - Use `NonZeroTooltipContent` so empty series don't render noise, and wire a drill-down
