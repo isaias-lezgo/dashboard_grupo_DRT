@@ -23,6 +23,10 @@
     "verify:stale-matrix": "tsx scripts/verify-stale-matrix.ts",
     "verify:assignment": "tsx scripts/verify-assignment-funnel.ts",
     "verify:sync-store": "tsx --env-file-if-exists=.env.local scripts/verify-sync-store.ts",
+    "verify:meta-oauth": "tsx scripts/verify-meta-oauth.ts",
+    "verify:meta-connection-store": "tsx --env-file-if-exists=.env.local scripts/verify-meta-connection-store.ts",
+    "verify:meta": "tsx scripts/verify-meta.ts",
+    "verify:meta-attribution": "tsx scripts/verify-meta-attribution.ts",
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/db-migrate.ts",
     "add-client": "tsx scripts/add-client.ts"
   },
