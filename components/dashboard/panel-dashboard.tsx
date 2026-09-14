@@ -151,17 +151,24 @@ export function PanelDashboard({
           esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
       <AssignmentFunnelChart {...shared} />
       <AdvisorStageTable {...shared} />
-      <StaleOpportunityMatrix
-        {...shared}
-        conversationActivity={conversationActivity}
-        activityStatus={activityStatus}
-        onRetryActivity={onRetryActivity}
-      />
-      <TaskBacklogChart
-        {...shared}
-        allTasks={allTasks}
-        unfilteredOpportunities={unfilteredOpportunities}
-      />
+      {/* Los dos gráficos de vigilancia de asesoras van solo por desarrollo
+          (pedido del cliente, 2026-09-14): en GENERAL la vista es de embudo y
+          negocio, no de operación; la vigilancia se hace en cada desarrollo. */}
+      {panel !== "general" && (
+        <>
+          <StaleOpportunityMatrix
+            {...shared}
+            conversationActivity={conversationActivity}
+            activityStatus={activityStatus}
+            onRetryActivity={onRetryActivity}
+          />
+          <TaskBacklogChart
+            {...shared}
+            allTasks={allTasks}
+            unfilteredOpportunities={unfilteredOpportunities}
+          />
+        </>
+      )}
       <div className="grid gap-5 lg:grid-cols-2">
         <OrigenDeLeadChart {...shared} />
         <CanalDeContactoChart {...shared} />

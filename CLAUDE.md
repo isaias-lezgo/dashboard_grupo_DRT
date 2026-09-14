@@ -325,7 +325,9 @@ reintroduce a `sucursalField`-style seam here.
 - **`ChartContainer` (`components/ui/chart.tsx`) already wraps its child in a Recharts `ResponsiveContainer`.** Do not nest another one inside it — the chart still renders, but Recharts logs "width and height are both fixed numbers" on every resize. Charts recovered from `upstream` predate this and do nest one; drop it when you port them.
 - The panel also takes **`dateRange`** (the resolved `ResolvedDateRange | null` from `app/page.tsx`). It exists for charts that measure a date *other than* `createdAt` — nothing mounted uses it today, but keep it wired: it is exactly what a rebuilt close-date chart would need, and re-plumbing it later is the expensive part.
 - **Los dos gráficos de vigilancia de asesoras ignoran el filtro global de fechas**
-  (`stale-opportunity-matrix.tsx`, `task-backlog-chart.tsx`). "Sin atención en 60 días" y
+  (`stale-opportunity-matrix.tsx`, `task-backlog-chart.tsx`), **y desde 2026-09-14 se montan
+  solo en las pestañas de desarrollo, no en GENERAL** (pedido del cliente). El fetch de
+  `conversation-activity` sigue arrancando con la página porque las seis pestañas lo usan. "Sin atención en 60 días" y
   "vencida" son condiciones de HOY, no de un periodo, así que leen `allOpportunities` y la
   prop nueva `allTasks` en vez de las slices filtradas. Sí respetan desarrollo / asesor /
   origen / canal, porque esos ya vienen aplicados aguas arriba.
