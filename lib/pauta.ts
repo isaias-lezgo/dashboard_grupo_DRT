@@ -8,7 +8,10 @@ import type { Opportunity, Pauta } from "@/lib/types"
 // Paid-traffic source/medium vocabularies. Social + search together — an
 // opportunity is "paid traffic" if its GHL source or ad medium matches any of
 // these. These are the raw-signal half of isDePauta.
-export const PAID_SOCIAL_SOURCES = ["meta", "facebook", "instagram", "tiktok", "fb", "snapchat", "pinterest"]
+// "pauta": Grupo DRT escribe el source como "Pauta WhatsApp" / "Pauta Formulario"
+// / "Pauta" (~85 % de sus oportunidades). Sin esta entrada, isDePauta dependía
+// solo de la relación con el objeto Pauta, que un ~2 % de los leads no tiene.
+export const PAID_SOCIAL_SOURCES = ["meta", "facebook", "instagram", "tiktok", "fb", "snapchat", "pinterest", "pauta"]
 export const PAID_SOCIAL_MEDIUMS = ["paid_social", "paidsocial", "paid social", "cpc", "cpm", "paid_search", "paid_ads"]
 export const PAID_SEARCH_SOURCES = ["google", "bing", "yahoo", "baidu", "duckduckgo"]
 export const PAID_SEARCH_MEDIUMS = ["cpc", "ppc", "paid_search", "paidsearch", "google_ads", "sem"]

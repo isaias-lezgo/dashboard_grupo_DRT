@@ -2080,7 +2080,7 @@ git commit -m "feat(meta): paso meta en el sync, fila de carga, banner y rescate
   // CostInput = { opportunities; daily; ctx: AttributionContext; accounts; range: { start; end } | null }
   ```
 
-- [ ] **Step 1: Escribir el verify script**
+- [ ] **Step 1: Escribir el verify script** (ad ids numéricos en el fixture: `oppAdId` exige dígitos, como los ids reales de Meta)
 
 ```ts
 // scripts/verify-meta-attribution.ts
@@ -2149,18 +2149,18 @@ const meta: MetaAdsData = {
     { id: "s3", name: "Set", campaignId: "c3" },
   ],
   ads: [
-    { id: "a1", name: "Cañadas by El Mirador", adsetId: "s1" },
-    { id: "a1b", name: "Cañadas by El Mirador", adsetId: "s1" },   // mismo nombre, misma campaña → inequívoco
-    { id: "a2", name: "Atria lofts", adsetId: "s2" },
-    { id: "a3", name: "Terrenos desde $1.2 M", adsetId: "s3" },
-    { id: "a3b", name: "Atria lofts", adsetId: "s3" },             // "Atria lofts" en DOS campañas → ambiguo
+    { id: "101", name: "Cañadas by El Mirador", adsetId: "s1" },
+    { id: "102", name: "Cañadas by El Mirador", adsetId: "s1" },   // mismo nombre, misma campaña → inequívoco
+    { id: "201", name: "Atria lofts", adsetId: "s2" },
+    { id: "301", name: "Terrenos desde $1.2 M", adsetId: "s3" },
+    { id: "302", name: "Atria lofts", adsetId: "s3" },             // "Atria lofts" en DOS campañas → ambiguo
   ],
   daily: [
-    { adId: "a1", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
-    { adId: "a1", date: "2026-08-15", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
-    { adId: "a2", date: "2026-08-15", spend: 50, impressions: 500, reach: 400, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
-    { adId: "a3", date: "2026-08-20", spend: 30, impressions: 300, reach: 200, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
-    { adId: "a1", date: "2026-09-01", spend: 999, impressions: 1, reach: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
+    { adId: "101", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
+    { adId: "101", date: "2026-08-15", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
+    { adId: "201", date: "2026-08-15", spend: 50, impressions: 500, reach: 400, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
+    { adId: "301", date: "2026-08-20", spend: 30, impressions: 300, reach: 200, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
+    { adId: "101", date: "2026-09-01", spend: 999, impressions: 1, reach: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
   ],
   window: { since: "2026-08-01", until: "2026-09-13" },
   failedAccounts: [],
@@ -2186,9 +2186,9 @@ async function main() {
 
   // --- índice: jerarquía y nombres plegados → campañas
   const index = buildMetaIndex(meta);
-  assert.equal(index.byAd.get("a1")?.campaign?.id, "c1");
-  assert.equal(index.byAd.get("a1")?.account?.currency, "MXN");
-  assert.equal(index.dailyByAd.get("a1")?.length, 3);
+  assert.equal(index.byAd.get("101")?.campaign?.id, "c1");
+  assert.equal(index.byAd.get("101")?.account?.currency, "MXN");
+  assert.equal(index.dailyByAd.get("101")?.length, 3);
   assert.deepEqual([...index.byName.get("canadas by el mirador")!], ["c1"]);
   assert.deepEqual([...index.byName.get("atria lofts")!].sort(), ["c2", "c3"]);
   assert.deepEqual([...index.byName.get("iw - canadas - agosto")!], ["c1"], "los nombres de campaña también se indexan");
@@ -2199,8 +2199,8 @@ async function main() {
     pautaContacts: buildPautaContacts(pautas),
     pautaNameByContact: buildPautaNameByContact(pautas),
   };
-  assert.deepEqual(classifyLead(opp({ id: "1", adId: "a1" }), ctx), { kind: "exact", adId: "a1", campaignId: "c1" });
-  assert.deepEqual(classifyLead(opp({ id: "9", adId: "zzz9" }), ctx), { kind: "unknownAd", adId: "zzz9" });
+  assert.deepEqual(classifyLead(opp({ id: "1", adId: "101" }), ctx), { kind: "exact", adId: "101", campaignId: "c1" });
+  assert.deepEqual(classifyLead(opp({ id: "9", adId: "9999" }), ctx), { kind: "unknownAd", adId: "9999" });
   // sin id, con nombre en el custom field de la oportunidad → campaña única
   assert.deepEqual(
     classifyLead(opp({ id: "11", customFieldsResolved: { "Nombre Pauta": "Cañadas by El Mirador" } }), ctx),
@@ -2220,41 +2220,41 @@ async function main() {
   assert.deepEqual(classifyLead(opp({ id: "r", source: "Referido" }), ctx), { kind: "notPauta" });
   // importado por CSV: nunca es de pauta, aunque el pipeline sea de un desarrollo
   assert.deepEqual(classifyLead(opp({ id: "csv", source: undefined, attributionMedium: "csv_import", pipelineId: "p-pal" }), ctx), { kind: "notPauta" });
-  assert.deepEqual(classifyLead(opp({ id: "csv2", adId: "a1", attributionMedium: "csv_import" }), ctx), { kind: "notPauta" }, "csv_import gana incluso con ad id");
+  assert.deepEqual(classifyLead(opp({ id: "csv2", adId: "101", attributionMedium: "csv_import" }), ctx), { kind: "notPauta" }, "csv_import gana incluso con ad id");
 
   // --- desarrollo por moda de leads, por nombre, sin desarrollo, y mixtos
   const opps = [
-    opp({ id: "1", adId: "a1", pipelineId: "p-can" }),
-    opp({ id: "2", adId: "a1", pipelineId: "p-can" }),
-    opp({ id: "3", adId: "a1", pipelineId: "p-atr" }),
-    opp({ id: "4", adId: "a1", pipelineId: "p-can", stage: "05. Visita al Desarrollo" }),
-    opp({ id: "5", adId: "a1", pipelineId: "p-can", stage: "07. Apartado", status: "lost" }),
-    opp({ id: "6", adId: "a1", pipelineId: "p-can", stage: "08. Venta" }),
-    opp({ id: "7", adId: "a2", pipelineId: "p-atr", createdAt: "2026-08-15T05:30:00.000Z" }),
+    opp({ id: "1", adId: "101", pipelineId: "p-can" }),
+    opp({ id: "2", adId: "101", pipelineId: "p-can" }),
+    opp({ id: "3", adId: "101", pipelineId: "p-atr" }),
+    opp({ id: "4", adId: "101", pipelineId: "p-can", stage: "05. Visita al Desarrollo" }),
+    opp({ id: "5", adId: "101", pipelineId: "p-can", stage: "07. Apartado", status: "lost" }),
+    opp({ id: "6", adId: "101", pipelineId: "p-can", stage: "08. Venta" }),
+    opp({ id: "7", adId: "201", pipelineId: "p-atr", createdAt: "2026-08-15T05:30:00.000Z" }),
     opp({ id: "8", pipelineId: "p-can", source: "Pauta Formulario" }),
-    opp({ id: "9", adId: "zzz9", pipelineId: "p-can" }),
-    opp({ id: "10", adId: "a1", pipelineId: "p-can", createdAt: "2026-07-31T23:30:00.000Z" }),
+    opp({ id: "9", adId: "9999", pipelineId: "p-can" }),
+    opp({ id: "10", adId: "101", pipelineId: "p-can", createdAt: "2026-07-31T23:30:00.000Z" }),
     opp({ id: "11", contactId: "c-11", pipelineId: "p-can", source: undefined, stage: "04. Cita Programada" }),
     opp({ id: "r", pipelineId: "p-can", source: "Referido" }),
     opp({ id: "csv", pipelineId: "p-pal", source: undefined, attributionMedium: "csv_import" }),
   ];
   const { byAd: desarrolloByAd, mixed } = assignAdDesarrollos(meta, index, opps, pipelines);
-  assert.equal(desarrolloByAd.get("a1"), "Cañadas", "moda: 6 en Cañadas vs 1 en Atria");
-  assert.deepEqual(mixed, ["a1"], "a1 tiene leads en más de un desarrollo");
-  assert.equal(desarrolloByAd.get("a2"), "Atria");
-  assert.equal(desarrolloByAd.get("a3"), NO_DESARROLLO, "sin leads y sin nombre de desarrollo");
-  assert.equal(desarrolloByAd.get("a1b"), "Cañadas", "sin leads, pero la campaña dice Cañadas");
-  assert.equal(desarrolloByAd.get("a3b"), "Atria", "la campaña es 'Branding genérico', pero el nombre del AD dice Atria");
+  assert.equal(desarrolloByAd.get("101"), "Cañadas", "moda: 6 en Cañadas vs 1 en Atria");
+  assert.deepEqual(mixed, ["101"], "a1 tiene leads en más de un desarrollo");
+  assert.equal(desarrolloByAd.get("201"), "Atria");
+  assert.equal(desarrolloByAd.get("301"), NO_DESARROLLO, "sin leads y sin nombre de desarrollo");
+  assert.equal(desarrolloByAd.get("102"), "Cañadas", "sin leads, pero la campaña dice Cañadas");
+  assert.equal(desarrolloByAd.get("302"), "Atria", "la campaña es 'Branding genérico', pero el nombre del AD dice Atria");
   // un desarrollo que NO está en PANEL_SCOPES pero sí en los pipelines también se detecta por nombre
   const withSeventh: Pipeline[] = [...pipelines, { id: "p-7", name: "Nuevo Bosque", stages: STAGES }];
-  const metaNoLeads = { ...meta, ads: [{ id: "n1", name: "Nuevo Bosque lotes", adsetId: "s1" }], daily: [] };
+  const metaNoLeads = { ...meta, ads: [{ id: "701", name: "Nuevo Bosque lotes", adsetId: "s1" }], daily: [] };
   const r2 = assignAdDesarrollos(metaNoLeads, buildMetaIndex(metaNoLeads), [], withSeventh);
-  assert.equal(r2.byAd.get("n1"), "Nuevo Bosque");
+  assert.equal(r2.byAd.get("701"), "Nuevo Bosque");
 
   // --- scope por panel: GENERAL devuelve la misma referencia; el fallback por nombre y el scope coinciden
   assert.equal(scopeMetaDaily(meta, desarrolloByAd, "general", pipelines), meta.daily);
   const canDaily = scopeMetaDaily(meta, desarrolloByAd, "canadas", pipelines);
-  assert.deepEqual(canDaily.map((d) => d.adId), ["a1", "a1", "a1"]);
+  assert.deepEqual(canDaily.map((d) => d.adId), ["101", "101", "101"]);
   assert.deepEqual(scopeMetaDaily(meta, desarrolloByAd, "palmyra", pipelines), []);
 
   // --- día local: 2026-07-31T23:30Z es 31 de julio en CDMX (UTC-6); 2026-08-15T05:30Z es 14 de agosto
@@ -2296,12 +2296,12 @@ async function main() {
   assert.equal(byKey.venta.costPerResult, null, "con moneda mixta no hay costo consolidado");
 
   // --- una sola moneda: costo = gasto / alcanzaron; sin alcanzaron → null
-  const mxnDaily = meta.daily.filter((d) => d.adId !== "a3");
+  const mxnDaily = meta.daily.filter((d) => d.adId !== "301");
   const costMxn = buildCostPerStage({ opportunities: opps, daily: mxnDaily, ctx, accounts: meta.accounts, range });
   assert.equal(costMxn.mixedCurrency, false);
   assert.equal(costMxn.stages.find((s) => s.key === "venta")?.costPerResult, 250);
   assert.equal(costMxn.stages.find((s) => s.key === "apartado")?.costPerResult, 125);
-  const nadie = buildCostPerStage({ opportunities: [opp({ id: "solo", adId: "a1" })], daily: mxnDaily, ctx, accounts: meta.accounts, range });
+  const nadie = buildCostPerStage({ opportunities: [opp({ id: "solo", adId: "101" })], daily: mxnDaily, ctx, accounts: meta.accounts, range });
   assert.equal(nadie.stages.find((s) => s.key === "venta")?.costPerResult, null, "sin ventas → null, nunca ∞");
 
   // --- sin rango = toda la ventana
@@ -2326,7 +2326,7 @@ async function main() {
   const c3 = rows[2];
   assert.equal(c3.leadsCrm, 0);
   assert.equal(c3.cpl, null, "gasto sin leads: null, y la UI lo pinta en rojizo");
-  assert.deepEqual(c3.adIds, ["a3"]);
+  assert.deepEqual(c3.adIds, ["301"]);
 
   console.log("✅ verify:meta-attribution OK");
 }
