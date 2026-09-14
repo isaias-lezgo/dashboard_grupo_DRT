@@ -25,11 +25,15 @@ closes. When proposing charts, the Visita → Apartado step says more than any o
 | La Sierra | `gRHIvjxjQ2vvHSXQjfC2` | 1,979 |
 | Atria | `0HGe4sGXe7v6Keo2Fk7v` | 1,968 |
 | Saggita | `5FZvtr1HjvpLDXjcHxfx` | 1,872 |
-| Palmyra | `jNQOWHy6JLW5Mbb18l7t` | **0** |
-| Zanda | `1f8VurvKrPgbwYrmBo2m` | **0** |
+| Palmyra | `jNQOWHy6JLW5Mbb18l7t` | **0** → ~1,559 (CSV, 2026-08-28) |
+| Zanda | `1f8VurvKrPgbwYrmBo2m` | **0** → ~1,433 (CSV, 2026-08-28) |
 
 Palmyra and Zanda are real pipelines that have not launched. They get their own tabs and
-render honest empty states — do **not** hide them.
+render honest empty states — do **not** hide them. **Since 2026-08-28 they are no longer
+empty**: ~3,000 records were bulk-loaded by CSV on Aug 28-31 (`attributions[].medium ===
+"csv_import"`, no `source`, no ad id). Those are a database, not pauta leads — see
+"Meta Ads" for the `notPauta` bucket that keeps them out of cost-per-lead. Re-measure the
+table above before trusting it.
 
 **The shape of this account, and what it implies for charts.** All figures measured
 2026-08-24 against production; re-measure before trusting them, but the orders of
@@ -88,10 +92,14 @@ pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/cana
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
 pnpm verify:stale-matrix # lib/stale-opportunity-matrix.ts — cubetas de abandono en ambos ejes
 pnpm verify:sync-store   # lib/sync-store.ts — gzip roundtrip, aislamiento por cliente, el candado
+pnpm verify:meta-oauth   # lib/meta-oauth.ts — state firmado, cifrado del token, URL del diálogo
+pnpm verify:meta-connection-store # lib/meta-connection-store.ts — fila por (cliente, producto); usa la base si hay DATABASE_URL
+pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ventana de historia
+pnpm verify:meta-attribution # lib/meta-attribution.ts — llave por ad id, desarrollo por ad, costo por etapa
 npx tsc --noEmit         # REQUIRED: next build ignores TS errors, so a green build proves nothing
 
 # Caché de sincronización (Neon)
-pnpm db:migrate          # crea project_sync — idempotente, va por DATABASE_URL_UNPOOLED
+pnpm db:migrate          # crea project_sync y meta_connection — idempotente, va por DATABASE_URL_UNPOOLED
 ```
 
 `pnpm lint` is broken and has been for a while — `eslint` is not actually a dependency of
@@ -142,6 +150,15 @@ Optional (the sync cache — see "Caché de sincronización" below):
 - `DATABASE_URL` / `DATABASE_URL_UNPOOLED` — injected by the Neon integration on Vercel;
   `vercel env pull .env.local` brings them down locally. **Absent = the app behaves
   exactly as it did before the cache existed**, doing a full GHL sync on every load.
+
+Optional (Meta Ads — see "Meta Ads" below):
+- `META_APP_ID` / `META_APP_SECRET` / `META_LOGIN_CONFIG_ID` — the Lezgo Meta app
+  (`Paneles Lezgo Suite`, app id `1432292882099074`, Login for Business config
+  `1047096268324910`). **Lezgo's, not the client's** — never in `DASHBOARD_CLIENTS`.
+  Absent = the "Conectar con Meta" button is disabled and the sync skips Meta.
+- `META_PUBLIC_ORIGIN` — optional; pins the OAuth `redirect_uri` origin in
+  production (`https://drt.lezgosuite.com`). Without it the request origin is used
+  (fine for localhost).
 
 All are server-side only. `DASHBOARD_CLIENTS` is read in `lib/clients.ts`;
 `DASHBOARD_AUTH_SECRET` in `lib/auth.ts`, `app/api/auth/login/route.ts`, and
@@ -400,6 +417,74 @@ a un par. La ruta lee una fila de `project_sync` con el payload ya armado, la ma
 - **No caches las rutas de detalle** que se piden al abrir un drawer, ni
   `/api/conversation-activity`. Van a GHL en vivo y ahí está bien.
 
+### Meta Ads
+
+Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. Entrega ①
+(conexión + dataset + cruce) está implementada; ② (card "Inversión en pauta" por tab) y
+③ (pestaña PAUTA) tienen spec pendiente.
+
+- **La llave es el ad id.** Cada oportunidad de pauta trae `utmAdId` (→ `opp.adId`) y el
+  custom field **`ID Pauta`** (así se llama el poblado; `ID de Pauta` existe casi vacío),
+  que es el id del anuncio en la Marketing API tal cual. `oppAdId()` en
+  `lib/meta-attribution.ts` es la única función que lo lee (attribution nativa manda; el
+  custom field es el fallback); nunca cruces por nombre cuando hay id.
+- **Tres niveles de atribución de un lead, nunca mezclados** (`classifyLead`): `exact`
+  por ad id; `byName` cuando no hay id pero el nombre del ad (`Nombre Pauta` de la opp o
+  `nombre_de_la_pauta` del registro Pauta del contacto) vive en UNA sola campaña de Meta;
+  `noAdId` si es de pauta y no hay nada; `notPauta` para orgánicos, referidos e
+  **importados por CSV** (`attributions[].medium === "csv_import"`, que gana incluso con
+  ad id). Solo los dos primeros entran al costo. Medido 2026-09-13 sobre 14,280
+  oportunidades: 63 % con ad id; el objeto Pauta no trae ad id pero sí
+  `nombre_de_la_pauta` (94 %), `desarrollo` y `formulario` al 100 %.
+- **La conexión es un botón** (`meta-connection.tsx` → `app/api/meta/*`): OAuth de
+  Facebook Login for Business con configuración de **usuario del sistema**, así que el
+  token no caduca y lo que se conecta es la empresa del cliente. El token vive cifrado
+  (AES-GCM, llave derivada de `DASHBOARD_AUTH_SECRET` por HKDF) en `meta_connection`, una
+  fila por `(client_id, product)`. **Esa fila no es desechable**: si se borra hay que
+  reconectar. `product` existe para que WhatsApp entre después en la misma app.
+- **El `state` del OAuth lleva el `clientId` firmado** y el callback exige que sea el del
+  cliente logueado — misma garantía que la cookie — **y que el nonce coincida con la
+  cookie `meta_oauth`** que dejó `/connect`: sin ella, quien conozca la contraseña del
+  panel podría iniciar el flujo con su propio Meta y fijarle al cliente una conexión
+  ajena. `verify:meta-oauth` asserta el state; la cookie se prueba a mano.
+- **`metaAds` es un dataset más del sync** (`lib/sync.ts`, paso `meta`), que corre
+  DESPUÉS del transform de `opportunities` porque la ventana de historia sale de la
+  oportunidad más antigua con ad id. Cae en el caché de Neon como todo. **Sin conexión el
+  paso no se emite y `metaAds` es `null`** — no es un error ni levanta banner; la fila de
+  la pantalla de carga solo aparece cuando el paso existe. Con token revocado (código
+  190) el paso es `error` con `reason: "token_revoked"`; si `DASHBOARD_AUTH_SECRET` rota,
+  el token deja de descifrar y el paso reporta `error` / `token_unreadable` (no calla).
+  En ambos casos la ruta rescata el `metaAds` del último caché bueno (`preserveMetaAds`)
+  para no borrar el gasto en pantalla, y el banner pide reconectar.
+- **Cada sync re-trae la ventana completa** (desde el mes de la opp más vieja con ad id,
+  tope 24 meses, por meses calendario). Sin merge incremental: Meta corrige cifras hacia
+  atrás y el caché no guarda historia.
+- **De `actions` solo salen dos contadores**: `lead` (formularios) y
+  `onsite_conversion.messaging_conversation_started_7d` (WhatsApp) — los dos `source` de
+  DRT. `leadsMeta` vs `leadsCrm` es una reconciliación, no un duplicado.
+- **El desarrollo de un ad se infiere** (`assignAdDesarrollos`): moda de los pipelines de
+  sus leads (los importados no votan), luego el nombre de un pipeline o etiqueta de
+  `PANEL_SCOPES` en campaña/adset/ad (agujas largas primero), luego `Sin desarrollo`.
+  Devuelve `mixed` (ads con leads en más de un desarrollo) para que la UI lo diga. **El
+  gasto no se reparte** entre desarrollos ni se convierte de moneda (`mixedCurrency`
+  apaga los costos consolidados). El valor siempre es el nombre real del pipeline — el
+  mismo string de `desarrolloOf` — para que `scopeMetaDaily` lo encuentre.
+- **Costo por etapa = cohorte de creación**: gasto de la ventana ÷ oportunidades creadas
+  en la ventana (día local CDMX) que alcanzaron la etapa; "alcanzó" es el prefijo numérico
+  de la etapa actual ≥ el objetivo (una perdida en `05.` sí alcanzó Visita), Venta también
+  cuenta `isWonOpp`. Sin alcanzados → `null`, nunca `$0`.
+- **`isDePauta` reconoce `source: "Pauta …"`** (`"pauta"` en `PAID_SOCIAL_SOURCES`):
+  antes dependía solo de la relación con el objeto Pauta. `origen-de-lead-criteria.tsx`
+  ya no existe en este fork; la mención más abajo es herencia del panel compartido.
+- `lib/meta-client.ts` es **server-only** como `ghl-client.ts`. Lo puro está en
+  `meta-normalize.ts` y `meta-attribution.ts`. Limitación: `daily.date` va en la zona
+  horaria de la **cuenta publicitaria**; una cuenta fuera de `America/Mexico_City` desfasa
+  el corte diario hasta un día.
+- **Localhost no puede completar el OAuth** (la app publicada rechaza `http://localhost`):
+  se conecta una vez desde producción y el dev local lee la misma fila de Neon. Previews
+  de Vercel tampoco (`?error=preview`). Si hace falta iterar las rutas OAuth en local,
+  crear la **app de prueba** hija en Meta y poner sus credenciales en `.env.local`.
+
 ### Multi-client (multi-tenancy)
 
 One deployment serves every client. **The password IS the client's identity.** The full
@@ -427,7 +512,8 @@ Suggest that if a password leaks; don't rewrite the model on your own initiative
 The dashboard fetch streams NDJSON progress frames rather than returning a single JSON blob, so the UI can show live progress during the multi-second GHL sync:
 - `{ type: "location", name }` — sub-account name (resolved first, for the loading header).
 - `{ type: "step", key, status, count }` — structured per-dataset progress. `key` ∈
-  `config | contacts | opportunities | pautas | appointments | tasks`; `status` ∈
+  `config | contacts | opportunities | pautas | appointments | tasks | meta` (`meta` solo
+  cuando hay conexión con Meta — ver "Meta Ads"); `status` ∈
   `loading | retrying | done | partial | error`. `partial` means the dataset came back
   known-incomplete (some pages never landed) and `error` means it came back with nothing
   — neither is the same as a legitimate zero, which is `done` with `count: 0`. The `data`
@@ -498,6 +584,8 @@ bug class these modules were extracted to kill.
 | `lib/assignment-funnel.ts` | el universo de las oportunidades sin asesor, por mes y por estatus, con el total del mes como denominador |
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
+| `lib/meta-normalize.ts` | de la respuesta cruda de Graph a `MetaAdsData`; ventana de historia y chunks por mes |
+| `lib/meta-attribution.ts` | la llave por ad id, el desarrollo de cada ad, la clasificación del lead, el costo por etapa por cohorte y el rendimiento por campaña |
 
 - **"Origen de lead" y "Canal de contacto" viven en el CONTACTO, no en la oportunidad.**
   `categoryValuesOf()` busca primero en la oportunidad y **cae al contacto** a través de un
