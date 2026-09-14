@@ -213,6 +213,68 @@ export interface Pauta {
   properties?: Record<string, string>
 }
 
+// ── Meta Ads ─────────────────────────────────────────────────────────────────
+// El dataset de la Marketing API, normalizado en tablas con ids de padre (no
+// anidado): el cruce es por adId y los charts agrupan hacia arriba. Ver
+// docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md.
+
+export interface MetaAccount {
+  /** "act_123", como lo da Graph. */
+  id: string
+  name: string
+  /** ISO 4217. No se convierte: cuentas con monedas distintas se muestran aparte. */
+  currency: string
+  timezone: string
+}
+
+export interface MetaCampaign {
+  id: string
+  name: string
+  objective?: string
+  accountId: string
+}
+
+export interface MetaAdset {
+  id: string
+  name: string
+  campaignId: string
+}
+
+export interface MetaAd {
+  id: string
+  name: string
+  adsetId: string
+  status?: string
+}
+
+/** Un ad, un día. Meta omite los días sin gasto, así que no hay filas en cero. */
+export interface MetaDailyRow {
+  adId: string
+  /** YYYY-MM-DD en la zona horaria de la cuenta. */
+  date: string
+  spend: number
+  impressions: number
+  reach: number
+  clicks: number
+  linkClicks: number
+  /** action_type "lead": formularios → source "Pauta Formulario". */
+  leadsForm: number
+  /** action_type "onsite_conversion.messaging_conversation_started_7d": WhatsApp → "Pauta WhatsApp". */
+  leadsMsg: number
+}
+
+export interface MetaAdsData {
+  accounts: MetaAccount[]
+  campaigns: MetaCampaign[]
+  adsets: MetaAdset[]
+  ads: MetaAd[]
+  daily: MetaDailyRow[]
+  /** YYYY-MM-DD ambos; lo que se pidió, no lo que vino. */
+  window: { since: string; until: string }
+  /** Cuentas que fallaron en este sync. Vacío = todas bien. */
+  failedAccounts: { id: string; reason: string }[]
+}
+
 /**
  * A dataset that did not come back clean in the last sync.
  * `partial` = some pages never landed; `error` = nothing came back at all.
@@ -228,6 +290,8 @@ export interface SyncWarning {
   loaded: number
   /** Total the API reported, when it reported one. */
   expected?: number
+  /** Motivo específico cuando lo hay (p. ej. `token_revoked` en `meta`). */
+  reason?: string
 }
 
 /**
@@ -252,6 +316,11 @@ export interface DashboardPayload {
   campaigns: string[]
   sources: string[]
   pautas: Pauta[]
+  /**
+   * Gasto y jerarquía de Meta Ads. `null` = sin conexión (no es un error);
+   * ausente = frame de un deploy anterior. Ver "Meta Ads" en CLAUDE.md.
+   */
+  metaAds?: MetaAdsData | null
   locationId: string
   locationName: string
   /** Datasets that came back incomplete or empty. Optional so a `data` frame
