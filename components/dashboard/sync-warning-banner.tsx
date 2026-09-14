@@ -22,10 +22,23 @@ const DATASET_COPY: Record<string, { name: string; impact: string }> = {
     name: "las tareas",
     impact: "El rezago por asesor y el historial de tareas pueden quedar cortos.",
   },
+  meta: {
+    name: "los datos de Meta Ads",
+    impact: "El gasto y el costo por resultado no se actualizaron; se muestra el último sync bueno.",
+  },
 }
 
 function describe(w: SyncWarning): string {
   const copy = DATASET_COPY[w.key] ?? { name: `los datos de ${w.key}`, impact: "" }
+  if (w.key === "meta") {
+    if (w.reason === "token_revoked" || w.reason === "token_unreadable") {
+      return "Meta desconectado: la empresa revocó el acceso o el token dejó de ser válido. Reconecta desde la píldora \"Meta\" del encabezado; mientras tanto se muestra el último gasto sincronizado."
+    }
+    if (w.kind === "partial") {
+      return `Meta Ads: no respondieron las cuentas ${w.reason ?? ""}. El gasto de esas cuentas falta en este sync.`
+    }
+    return "Meta Ads no respondió. Se muestra el último gasto sincronizado."
+  }
   if (w.kind === "error") {
     return `No se pudieron cargar ${copy.name}. ${copy.impact}`.trim()
   }

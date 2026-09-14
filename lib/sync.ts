@@ -26,6 +26,11 @@ import {
   type GHLTask,
 } from "@/lib/ghl-client";
 import { withClient } from "@/lib/ghl-context";
+import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
+import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
+import { historyWindow } from "@/lib/meta-normalize";
+import { oppAdId } from "@/lib/meta-attribution";
+import { PANEL_TIME_ZONE } from "@/lib/task-backlog";
 import type { ClientConfig } from "@/lib/clients";
 import type { PagedResult } from "@/lib/paged-fetch";
 import type {
@@ -38,6 +43,7 @@ import type {
   Appointment,
   SyncWarning,
   DashboardPayload,
+  MetaAdsData,
 } from "@/lib/types";
 
 type Attribution = {
@@ -720,6 +726,72 @@ export async function syncProject(
       }
     }
 
+    // ── Meta Ads ──────────────────────────────────────────────────────────
+    // Corre DESPUÉS del transform de opportunities porque la ventana de historia
+    // sale de la oportunidad más antigua con ad id, y oppAdId() necesita las
+    // oportunidades ya normalizadas (attribution + custom field). Sin conexión
+    // no se emite el paso: eso no es un error, es que nadie ha apretado
+    // "Conectar con Meta".
+    const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
+      send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
+
+    let metaAds: MetaAdsData | null = null;
+    let metaWarning: SyncWarning | null = null;
+    // El token solo se descifra aquí y nunca sale de este bloque.
+    const metaConn = await readMetaConnectionWithToken(client, "ads").catch((err) => {
+      console.error("[meta] no se pudo leer la conexión, se sincroniza sin Meta:", err);
+      return null;
+    });
+    if (metaConn && metaConn.token === null) {
+      // Hay fila pero el blob no descifra (DASHBOARD_AUTH_SECRET rotado). Callar
+      // aquí dejaría la píldora en "conectado" y el gasto congelado sin aviso.
+      metaStep("error", 0);
+      metaWarning = { key: "meta", kind: "error", loaded: 0, reason: "token_unreadable" };
+    } else if (metaConn && metaConn.token !== null) {
+      const metaToken = metaConn.token;
+      metaStep("loading", 0);
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: PANEL_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      const selected = new Set(metaConn.selectedAccounts);
+      try {
+        metaAds = await fetchMetaAds({
+          token: metaToken,
+          accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
+          window: historyWindow(
+            opportunities.map((o) => ({ createdAt: o.createdAt, adId: oppAdId(o) ?? undefined })),
+            today
+          ),
+          onProgress: (n) => metaStep("loading", n),
+        });
+        if (metaAds.failedAccounts.length > 0) {
+          metaStep("partial", metaAds.ads.length);
+          metaWarning = {
+            key: "meta",
+            kind: "partial",
+            loaded: metaAds.ads.length,
+            reason: metaAds.failedAccounts.map((f) => f.id).join(","),
+          };
+        } else {
+          metaStep("done", metaAds.ads.length);
+        }
+      } catch (err) {
+        console.error("[meta] el sync de Meta Ads falló:", err instanceof Error ? err.message : String(err));
+        metaStep("error", 0);
+        metaAds = null;
+        metaWarning = {
+          key: "meta",
+          kind: "error",
+          loaded: 0,
+          reason: err instanceof MetaApiError && err.isTokenInvalid ? "token_revoked" : "failed",
+        };
+      }
+    }
+    if (metaWarning) warnings.push(metaWarning);
+
     // Conversations/messages are fetched separately by /api/dashboard-messages
     // (background load) so the expensive per-user message fan-out stays off
     // the critical path of the initial dashboard render.
@@ -758,6 +830,7 @@ export async function syncProject(
       campaigns: Array.from(campaignSet),
       sources: Array.from(sourceSet),
       pautas,
+      metaAds,
       locationId: client.locationId,
       warnings,
       meta: {
