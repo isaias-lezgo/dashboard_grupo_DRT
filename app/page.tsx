@@ -41,6 +41,7 @@ import { es } from "date-fns/locale"
 import { ConversationsChat } from "@/components/dashboard/conversations-chat"
 import { LoadingScreen } from "@/components/dashboard/loading-screen"
 import { SyncWarningBanner } from "@/components/dashboard/sync-warning-banner"
+import { MetaConnectionPill } from "@/components/dashboard/meta-connection"
 import { useDashboardData } from "@/hooks/use-dashboard-data"
 import { useConversationsData } from "@/hooks/use-conversations-data"
 import { useConversationActivity } from "@/hooks/use-conversation-activity"
@@ -426,8 +427,9 @@ export default function DashboardPage() {
                   ? `Actualizado ${relativeAge(data.meta.fetchedAt, nowTick)}`
                   : ""}
             </span>
-            
-           
+
+            <MetaConnectionPill warnings={data?.warnings ?? []} onConnected={() => refresh()} />
+
             <Button
               variant="default"
               size="sm"

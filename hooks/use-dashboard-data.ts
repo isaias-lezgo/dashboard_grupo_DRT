@@ -14,7 +14,8 @@ export type StepKey =
   | "opportunities"
   | "pautas"
   | "appointments"
-  | "tasks";
+  | "tasks"
+  | "meta";
 
 export type StepStatus =
   | "pending"
@@ -38,6 +39,7 @@ const INITIAL_STEPS: StepMap = {
   pautas: { status: "pending" },
   appointments: { status: "pending" },
   tasks: { status: "pending" },
+  meta: { status: "pending" },
 };
 
 // El shape lo define lib/types.ts, donde también lo leen lib/sync.ts (que lo

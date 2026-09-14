@@ -30,6 +30,9 @@ const STEP_ROWS: { key: StepKey; label: string }[] = [
   { key: "pautas", label: "Pautas" },
   { key: "appointments", label: "Citas" },
   { key: "tasks", label: "Tareas" },
+  // Solo aparece cuando el sync la emite: sin conexión con Meta el paso no
+  // existe, y una fila eternamente "pendiente" leería como sync trabado.
+  { key: "meta", label: "Meta Ads" },
 ]
 
 const FALLBACK_STEPS: StepMap = {
@@ -39,6 +42,7 @@ const FALLBACK_STEPS: StepMap = {
   pautas: { status: "pending" },
   appointments: { status: "pending" },
   tasks: { status: "pending" },
+  meta: { status: "pending" },
 }
 
 function SyncRing() {
@@ -270,10 +274,16 @@ function SyncFace({
 }) {
   const resolved = steps ?? FALLBACK_STEPS
 
-  const total = STEP_ROWS.length
+  // La fila de Meta es opcional: entra a la lista (y al denominador de la
+  // barra) solo cuando el servidor emitió su paso. Si no hay conexión nunca
+  // llega, y contarla dejaría la barra clavada en 6/7.
+  const rows = STEP_ROWS.filter(
+    (s) => s.key !== "meta" || resolved.meta.status !== "pending"
+  )
+  const total = rows.length
   // Every terminal state advances the bar, not just `done` — a dataset that
   // came back partial or failed is still one the sync is finished with.
-  const completed = STEP_ROWS.filter((s) =>
+  const completed = rows.filter((s) =>
     SETTLED_STATUSES.includes(resolved[s.key].status)
   ).length
   const pct = Math.round((completed / total) * 100)
@@ -330,7 +340,7 @@ function SyncFace({
           </div>
 
           <div className="w-full space-y-2.5">
-            {STEP_ROWS.map((row, i) => {
+            {rows.map((row, i) => {
               const s = resolved[row.key]
               return (
                 <StepRow

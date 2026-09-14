@@ -58,7 +58,7 @@ export async function GET(req: Request) {
       // stream sigue produciendo frames después de que GET() regresó.
       const send = (obj: unknown) => controller.enqueue(encoder.encode(enc(obj)));
       try {
-        const payload = await syncProject(client, send);
+        const payload = await preserveMetaAds(client, await syncProject(client, send));
         send({ type: "data", ...payload });
         await saveQuietly(client, payload);
       } catch (error) {
@@ -106,6 +106,22 @@ async function saveQuietly(client: ClientConfig, payload: DashboardPayload) {
   }
 }
 
+// Si el paso de Meta falló (token revocado, Meta caído), el payload trae
+// metaAds: null y un warning `meta`. Antes de mostrarlo o guardarlo, se rescata
+// el metaAds del último caché bueno: un gasto de hace una hora le gana a ningún
+// gasto, y el banner ya explica que no se actualizó.
+async function preserveMetaAds(client: ClientConfig, payload: DashboardPayload): Promise<DashboardPayload> {
+  const failed = payload.warnings?.some((w) => w.key === "meta" && w.kind === "error");
+  if (!failed || payload.metaAds || !isDbConfigured()) return payload;
+  try {
+    const prev = await readSync(client);
+    if (prev?.payload.metaAds) return { ...payload, metaAds: prev.payload.metaAds };
+  } catch (err) {
+    console.error("[meta] no se pudo rescatar el último metaAds:", err);
+  }
+  return payload;
+}
+
 // Corre después de la respuesta. Nada de aquí puede llegarle al usuario, así que
 // todo camino de falla termina en un log — pero el candado DEBE soltarse pase lo
 // que pase, o el cliente deja de refrescarse hasta que expire el timeout de 10
@@ -117,7 +133,7 @@ async function refreshInBackground(client: ClientConfig) {
     // Alguien más ya está sincronizando: dos personas abriendo el mismo panel
     // viejo a la vez deben producir un sync, no dos.
     if (!claimed) return;
-    const payload = await syncProject(client);
+    const payload = await preserveMetaAds(client, await syncProject(client));
     // writeSync limpia sync_started_at él solo, así que el camino feliz no
     // necesita releaseSync.
     await writeSync(client, payload);
