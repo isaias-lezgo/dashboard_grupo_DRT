@@ -449,6 +449,25 @@ cargue**. Todo fallo de Meta o de la tabla nueva se registra y el sync de GHL si
   WhatsApp como segunda configuración de Login en la misma app (`product =
   "whatsapp"`).
 
+## Revisión 2026-09-13 (antes de implementar)
+
+Medido contra producción con 14 280 oportunidades (el spec de arriba cita 10 309, de
+agosto). Cambios que el plan ya incorpora:
+
+- El custom field poblado es **`ID Pauta`** (7 992), no `ID de Pauta`; `utmAdId` 8 948;
+  alguno de los dos 8 986 (63 %). En 30 casos difieren: **manda la attribution nativa**.
+- El objeto Pauta no trae ad id, pero `nombre_de_la_pauta` (94 %) son nombres de ad de
+  Meta. Se agrega el nivel **`byName`** (nombre → campaña única), contado aparte.
+- **Palmyra y Zanda tienen ~1 559 y ~1 433 oportunidades importadas por CSV** el 28-31 de
+  agosto (`medium: csv_import`). La cohorte se clasifica `exact | byName | unknownAd |
+  noAdId | notPauta`; `csv_import` es `notPauta` siempre y nunca entra al costo.
+- `isDePauta` no reconocía `source: "Pauta …"`; se agrega `"pauta"` a `PAID_SOCIAL_SOURCES`.
+- **Cookie `meta_oauth`** con el nonce del `state`, exigida en el callback (fijación de
+  conexión por quien conozca la contraseña del panel).
+- **Secreto rotado** → `token_unreadable`, reportado como error, no silencio.
+- `assignAdDesarrollos` devuelve `mixed` y resuelve al nombre real del pipeline.
+- Limitación documentada: `daily.date` va en la zona horaria de la cuenta publicitaria.
+
 ## Fuera de alcance
 
 - Conectar desde previews de Vercel (callback central).

@@ -420,7 +420,8 @@ git commit -m "feat(meta): state firmado, cifrado del token y URL del diálogo O
     connectedAt: string
     updatedAt: string
   }
-  export interface MetaConnectionWithToken extends MetaConnection { token: string }
+  /** `token: null` = hay fila pero el blob no descifra (secreto rotado): hay que reconectar. */
+  export interface MetaConnectionWithToken extends MetaConnection { token: string | null }
   export function readMetaConnection(client, product): Promise<MetaConnection | null>
   export function readMetaConnectionWithToken(client, product): Promise<MetaConnectionWithToken | null>
   export function writeMetaConnection(client, product, input: { token; tokenKind; tokenExpiresAt; businessId; connectedBy; availableAccounts; selectedAccounts }): Promise<void>
@@ -549,6 +550,16 @@ async function main() {
   const withToken = await readMetaConnectionWithToken(A, "ads");
   assert.equal(withToken?.token, "EAAB-secreto-a");
 
+  // --- secreto rotado: la fila sigue, el token no descifra → token: null, NO null entero.
+  // El sync lo reporta como "token_unreadable"; la píldora sigue diciendo
+  // "conectado" porque la fila existe, y el banner es el que pide reconectar.
+  const secret = process.env.DASHBOARD_AUTH_SECRET;
+  process.env.DASHBOARD_AUTH_SECRET = "otro-secreto";
+  const rotated = await readMetaConnectionWithToken(A, "ads");
+  assert.ok(rotated, "la fila se sigue leyendo");
+  assert.equal(rotated.token, null, "el token no descifra con otro secreto");
+  process.env.DASHBOARD_AUTH_SECRET = secret;
+
   // --- AISLAMIENTO: B no ve la fila de A; otro producto tampoco
   assert.equal(await readMetaConnection(B, "ads"), null);
   assert.equal(await readMetaConnection(A, "whatsapp"), null);
@@ -643,7 +654,12 @@ export interface MetaConnection {
 }
 
 export interface MetaConnectionWithToken extends MetaConnection {
-  token: string;
+  /**
+   * null cuando la fila existe pero el blob no descifra (DASHBOARD_AUTH_SECRET
+   * rotado). Se distingue de "no hay fila" a propósito: el sync lo reporta como
+   * error `token_unreadable` en vez de callar como si nadie hubiera conectado.
+   */
+  token: string | null;
 }
 
 interface Row {
@@ -704,10 +720,9 @@ export async function readMetaConnectionWithToken(
 ): Promise<MetaConnectionWithToken | null> {
   const row = await readRow(client, product);
   if (!row) return null;
+  // null si el blob no descifra (secreto rotado). NO se colapsa a "sin fila":
+  // el sync debe reportarlo como error, no callar.
   const token = await decryptToken(new Uint8Array(row.token_encrypted));
-  // Un blob que no descifra (secreto rotado) equivale a no tener conexión: el
-  // sync lo reporta como token revocado y la píldora pide reconectar.
-  if (token === null) return null;
   return { ...fromRow(row), token };
 }
 
@@ -1517,7 +1532,9 @@ export async function fetchMetaAds(p: {
         );
       } catch (err) {
         if (err instanceof MetaApiError && err.isTokenInvalid) throw err;
-        console.error(`[meta] cuenta ${acc.id} falló:`, err);
+        // Solo el mensaje: un TypeError de fetch trae la URL (con el token) en
+        // `cause`, y eso no puede aterrizar en un log.
+        console.error(`[meta] cuenta ${acc.id} falló:`, err instanceof Error ? err.message : String(err));
         failed.push({
           id: acc.id,
           reason: err instanceof MetaApiError ? `code_${err.code}` : "network",
@@ -1558,8 +1575,8 @@ git commit -m "feat(meta): cliente de la Marketing API con reintentos y toleranc
 **Interfaces:**
 - Consumes: `requireClient`, `unauthorized` (`lib/session.ts`); `signState`, `verifyState`, `buildDialogUrl`, `redirectUriFor` (`lib/meta-oauth.ts`); `exchangeCode`, `debugToken`, `fetchMe`, `listAdAccounts`, `MetaApiError` (`lib/meta-client.ts`); el store completo.
 - Produces (contrato HTTP que consume la píldora en Task 8):
-  - `GET /api/meta/connect` → 302 al diálogo; 409 `{ error: "preview" }` en preview; 503 `{ error: "not_configured" }` sin env; 503 `{ error: "no_db" }` sin `DATABASE_URL`.
-  - `GET /api/meta/callback?code&state` → 302 a `/?meta=connected` o `/?meta=error&reason=<state_invalid|denied|token_exchange|token_invalid|no_accounts|db>`.
+  - `GET /api/meta/connect` → 302 al diálogo **y deja la cookie `meta_oauth` (httpOnly, SameSite=Lax, 10 min) con el `nonce` del state**; 409 `{ error: "preview" }` en preview; 503 `{ error: "not_configured" }` sin env; 503 `{ error: "no_db" }` sin `DATABASE_URL`.
+  - `GET /api/meta/callback?code&state` → 302 a `/?meta=connected` o `/?meta=error&reason=<state_invalid|denied|token_exchange|token_invalid|no_accounts|db>`. **Exige que `state.nonce` coincida con la cookie `meta_oauth`** y la borra. Sin eso, alguien que conozca la contraseña del panel (≈ el locationId) podría iniciar el flujo con SU Meta y mandarle al cliente la URL del callback: `state` válido, `code` válido, y el panel de DRT quedaría conectado a una cuenta ajena. La cookie ata el callback al navegador que empezó el flujo.
   - `GET /api/meta/connection` → `{ connected: false, reason?: "not_configured" | "no_db" | "preview" }` o `{ connected: true, connectedBy, connectedAt, tokenKind, tokenExpiresAt, accounts: (MetaAccountInfo & { selected: boolean })[] }`.
   - `POST /api/meta/accounts` `{ ids: string[] }` → 204, o 400 `{ error: "invalid_selection" }`.
   - `DELETE /api/meta/connection` → 204.
@@ -1613,9 +1630,21 @@ export async function GET(req: Request) {
     redirectUri: redirectUriFor(req.url, process.env.META_PUBLIC_ORIGIN),
     state,
   });
-  return Response.redirect(url, 302);
+  // La cookie ata el callback a ESTE navegador: el callback exige que el nonce
+  // del state coincida con ella. Sin esto, un state válido en manos ajenas
+  // bastaría para conectar el panel a una cuenta de Meta que no es del cliente.
+  const nonce = (await verifyState(state))!.nonce;
+  const secure = new URL(req.url).protocol === "https:";
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: url,
+      "Set-Cookie": `${OAUTH_COOKIE}=${nonce}; Path=/api/meta/callback; HttpOnly; SameSite=Lax; Max-Age=${STATE_MAX_AGE_MS / 1000}${secure ? "; Secure" : ""}`,
+    },
+  });
 }
 ```
+(Import adicional en `connect`: `verifyState`, `STATE_MAX_AGE_MS` y `OAUTH_COOKIE` de `@/lib/meta-oauth`. Agregar a `lib/meta-oauth.ts`, junto a `STATE_MAX_AGE_MS`: `export const OAUTH_COOKIE = "meta_oauth";`.)
 
 - [ ] **Step 3: `callback`**
 
@@ -1624,8 +1653,10 @@ export async function GET(req: Request) {
 // El regreso del diálogo de Meta. Verifica el state, canjea el code, averigua qué
 // clase de token es, lista las cuentas concedidas y guarda la fila. Cualquier
 // falla regresa al panel con ?meta=error&reason=… y NO deja nada guardado.
+import { cookies } from "next/headers";
 import { requireClient, unauthorized } from "@/lib/session";
-import { verifyState, redirectUriFor } from "@/lib/meta-oauth";
+import { verifyState, redirectUriFor, OAUTH_COOKIE } from "@/lib/meta-oauth";
+import { safeEqual } from "@/lib/auth";
 import { exchangeCode, debugToken, fetchMe, listAdAccounts, MetaApiError } from "@/lib/meta-client";
 import { writeMetaConnection } from "@/lib/meta-connection-store";
 
@@ -1633,10 +1664,18 @@ export const runtime = "nodejs";
 
 type Reason = "state_invalid" | "denied" | "token_exchange" | "token_invalid" | "no_accounts" | "db";
 
+// Siempre a "/", nunca a algo que venga en la petición: sin open redirect. La
+// cookie del nonce se borra en todos los caminos — es de un solo uso.
 function back(req: Request, params: Record<string, string>): Response {
   const url = new URL("/", req.url);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  return Response.redirect(url.toString(), 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: url.toString(),
+      "Set-Cookie": `${OAUTH_COOKIE}=; Path=/api/meta/callback; HttpOnly; SameSite=Lax; Max-Age=0`,
+    },
+  });
 }
 
 export async function GET(req: Request) {
@@ -1650,6 +1689,10 @@ export async function GET(req: Request) {
   // El state tiene que ser del cliente logueado: un state ajeno (aunque esté
   // bien firmado) guardaría el token en la fila de otro.
   if (!state || state.clientId !== client.id || state.product !== "ads") return fail("state_invalid");
+  // …y del navegador que empezó el flujo: el nonce de la cookie que dejó
+  // /connect tiene que ser el mismo del state.
+  const nonceCookie = (await cookies()).get(OAUTH_COOKIE)?.value ?? "";
+  if (!nonceCookie || !safeEqual(nonceCookie, state.nonce)) return fail("state_invalid");
 
   if (q.get("error") || !q.get("code")) return fail("denied");
 
@@ -1793,6 +1836,7 @@ Run: `pnpm dev`, iniciar sesión, y en el navegador:
    - Si la app publicada rechaza `localhost` como redirect_uri, la prueba de callback se hace en `drt-psi.vercel.app` tras desplegar (spec, decisión 3). Anotar el resultado en el commit.
 3. Tras autorizar, la URL termina en `/?meta=connected`, y `GET /api/meta/connection` devuelve `connected: true` con las cuentas.
 4. `curl -X POST -H 'content-type: application/json' -d '{"ids":["act_999"]}' …/api/meta/accounts` → 400.
+4b. Fijación: copiar la URL completa del callback (con `code` y `state`) desde la barra del navegador ANTES de que cargue, y abrirla en una ventana de incógnito logueada como el mismo cliente pero sin la cookie `meta_oauth` → `/?meta=error&reason=state_invalid`, y `GET /api/meta/connection` sigue en `connected:false`.
 5. `psql`/Neon console: `SELECT client_id, product, token_kind, jsonb_array_length(selected_accounts) FROM meta_connection` — el token no aparece en claro.
 
 - [ ] **Step 7: Commit**
@@ -1815,7 +1859,7 @@ git commit -m "feat(meta): rutas de conexión OAuth, estado y selección de cuen
 
 **Interfaces:**
 - Consumes: `readMetaConnectionWithToken` (Task 2), `fetchMetaAds`, `MetaApiError` (Task 4), `historyWindow` (Task 3), `PANEL_TIME_ZONE` de `lib/task-backlog.ts`, `readSync`.
-- Produces: `DashboardPayload.metaAds` poblado o `null`; warning `{ key: "meta", kind: "error", reason: "token_revoked" | "failed" }` o `{ key: "meta", kind: "partial", loaded, reason: "act_1,act_2" }`.
+- Produces: `DashboardPayload.metaAds` poblado o `null`; warning `{ key: "meta", kind: "error", reason: "token_revoked" | "token_unreadable" | "failed" }` o `{ key: "meta", kind: "partial", loaded, reason: "act_1,act_2" }`.
 
 - [ ] **Step 1: El paso en `lib/sync.ts`**
 
@@ -1824,18 +1868,21 @@ Imports nuevos al inicio del archivo:
 import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
 import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
 import { historyWindow } from "@/lib/meta-normalize";
+import { oppAdId } from "@/lib/meta-attribution";
 import { PANEL_TIME_ZONE } from "@/lib/task-backlog";
 import type { MetaAdsData } from "@/lib/types";
 ```
-(`MetaAdsData` se agrega al `import type { ... } from "@/lib/types"` existente.)
+(`MetaAdsData` se agrega al `import type { ... } from "@/lib/types"` existente. `oppAdId` viene de Task 7 — si se ejecuta Task 6 antes que Task 7, crear `lib/meta-attribution.ts` solo con `oppAdId` tal como está en Task 7 y el resto después.)
 
-Después del bloque `const contactsRaw = ...; const tasks = tasksOut.records;` y **antes** de `const warnings: SyncWarning[] = [...]`, insertar:
+**Después** del bloque que construye `const opportunities: Opportunity[] = opportunitiesRaw.map(...)` (las oportunidades ya transformadas, con `adId` y `customFieldsResolved` resueltos) y del enriquecimiento `if (!opp.adId) opp.adId = contact.adId;`, insertar:
 
 ```ts
     // ── Meta Ads ──────────────────────────────────────────────────────────
-    // Corre DESPUÉS de opportunities porque la ventana de historia sale de la
-    // oportunidad más antigua con adId. Sin conexión no se emite el paso: eso
-    // no es un error, es que nadie ha apretado "Conectar con Meta".
+    // Corre DESPUÉS del transform de opportunities porque la ventana de historia
+    // sale de la oportunidad más antigua con ad id, y oppAdId() necesita las
+    // oportunidades ya normalizadas (attribution + custom field). Sin conexión
+    // no se emite el paso: eso no es un error, es que nadie ha apretado
+    // "Conectar con Meta".
     const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
       send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
 
@@ -1846,7 +1893,12 @@ Después del bloque `const contactsRaw = ...; const tasks = tasksOut.records;` y
       console.error("[meta] no se pudo leer la conexión, se sincroniza sin Meta:", err);
       return null;
     });
-    if (metaConn) {
+    if (metaConn && metaConn.token === null) {
+      // Hay fila pero el blob no descifra (DASHBOARD_AUTH_SECRET rotado). Callar
+      // aquí dejaría la píldora en "conectado" y el gasto congelado sin aviso.
+      metaStep("error", 0);
+      metaWarning = { key: "meta", kind: "error", loaded: 0, reason: "token_unreadable" };
+    } else if (metaConn) {
       metaStep("loading", 0);
       const today = new Intl.DateTimeFormat("en-CA", {
         timeZone: PANEL_TIME_ZONE,
@@ -1860,10 +1912,7 @@ Después del bloque `const contactsRaw = ...; const tasks = tasksOut.records;` y
           token: metaConn.token,
           accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
           window: historyWindow(
-            opportunitiesRaw.map((o) => ({
-              createdAt: o.createdAt ?? o.dateAdded ?? "",
-              adId: firstAttr(o.attributions as Attribution[] | undefined)?.utmAdId,
-            })),
+            opportunities.map((o) => ({ createdAt: o.createdAt, adId: oppAdId(o) ?? undefined })),
             today
           ),
           onProgress: (n) => metaStep("loading", n),
@@ -1893,18 +1942,15 @@ Después del bloque `const contactsRaw = ...; const tasks = tasksOut.records;` y
     }
 ```
 
-En la construcción de `warnings`, después del `.map(...)` que cierra el array, agregar:
+Justo antes del `return { ... }` final (la construcción de `warnings` queda donde está, más arriba; es un `const` de array y `push` funciona):
 ```ts
     if (metaWarning) warnings.push(metaWarning);
 ```
-(`warnings` pasa de `const warnings: SyncWarning[] = [...].filter().map()` a seguir igual — `push` funciona sobre el array resultante.)
 
 En el `return { ... }` final, después de `pautas,`:
 ```ts
       metaAds,
 ```
-
-Nota: `o.dateAdded` y `o.attributions` existen en `GHLOpportunity` (`lib/ghl-client.ts`); `firstAttr` y `Attribution` ya están definidos arriba en `lib/sync.ts`.
 
 - [ ] **Step 2: `StepKey` en el hook**
 
@@ -1930,7 +1976,7 @@ y en el mapa inicial de pasos del mismo archivo (línea ~39, junto a `pautas: { 
 Y en `describe(w)`, antes del `if (w.kind === "error")`:
 ```ts
   if (w.key === "meta") {
-    if (w.reason === "token_revoked") {
+    if (w.reason === "token_revoked" || w.reason === "token_unreadable") {
       return "Meta desconectado: la empresa revocó el acceso o el token dejó de ser válido. Reconecta desde la píldora \"Meta\" del encabezado; mientras tanto se muestra el último gasto sincronizado."
     }
     if (w.kind === "partial") {
@@ -1977,7 +2023,7 @@ Con la conexión hecha en Task 5 y `pnpm dev`:
 2. En el frame `data`, `metaAds.accounts.length` = cuentas seleccionadas, `metaAds.daily.length` > 0, `metaAds.window.since` = primer día del mes de la opp más vieja con adId.
 3. **Cuadrar**: elegir una campaña en el Administrador de anuncios de DRT, un mes completo, y comparar su gasto con `sum(daily.spend)` filtrando `ads` por `adsetId → campaignId`. Deben coincidir al centavo (Meta reporta en la moneda de la cuenta).
 4. Borrar la fila (`DELETE /api/meta/connection`) y repetir `?fresh=1`: ningún frame `step` con `key: "meta"`, `metaAds: null`, sin warning.
-5. Simular token revocado: `UPDATE meta_connection SET token_encrypted = '\x00'::bytea WHERE client_id = 'drt'` (no descifra → `readMetaConnectionWithToken` devuelve null → sin paso). Para el 190 real, editar temporalmente el token en el store con uno inválido cifrado (`await encryptToken("EAAB-basura")` desde un script `tsx -e`), correr `?fresh=1`: paso `error`, warning `token_revoked`, y el `data` conserva el `metaAds` del caché anterior. Restaurar reconectando.
+5. Simular secreto rotado: `UPDATE meta_connection SET token_encrypted = '\x00'::bytea WHERE client_id = 'drt'` (no descifra → `token: null` → paso `error`, warning `token_unreadable`, y el banner pide reconectar). Para el 190 real, editar temporalmente el token en el store con uno inválido cifrado (`await encryptToken("EAAB-basura")` desde un script `tsx -e`), correr `?fresh=1`: paso `error`, warning `token_revoked`, y el `data` conserva el `metaAds` del caché anterior. Restaurar reconectando.
 6. Postgres caído: `DATABASE_URL=postgres://invalid pnpm dev` → el panel carga sin Meta y sin banner.
 
 - [ ] **Step 7: Commit**
@@ -1994,27 +2040,44 @@ git commit -m "feat(meta): paso meta en el sync, fila de carga, banner y rescate
 **Files:**
 - Create: `lib/meta-attribution.ts`
 - Create: `scripts/verify-meta-attribution.ts`
+- Modify: `lib/pauta.ts` (`PAID_SOCIAL_SOURCES`)
 - Modify: `package.json`
 
+**Contexto medido (2026-09-13, producción, 14 280 oportunidades):**
+- El ad id vive en `attributions[].utmAdId` (8 948) y en el custom field **`ID Pauta`** (7 992; existe también `ID de Pauta`, casi vacío). Alguno de los dos: 8 986. En 30 casos difieren.
+- El objeto Pauta **no** trae ad id, pero trae `nombre_de_la_pauta` (94 %), que son **nombres de ad** de Meta ("Cañadas by El Mirador" × 2 064) — el mismo valor que `attributions[].adName` y el custom field `Nombre Pauta` de la oportunidad. Ese nombre es el segundo nivel de atribución.
+- Palmyra y Zanda recibieron **1 559 y 1 433 oportunidades por CSV** el 28-31 de agosto (`attributions[].medium === "csv_import"`, sin `source`, sin ad id). No son leads de pauta y no pueden entrar al costo por lead.
+
 **Interfaces:**
-- Consumes: `MetaAdsData`, `Opportunity`, `Pipeline` (`lib/types.ts`); `desarrolloOf`, `NO_DESARROLLO`, `PANEL_SCOPES`, `resolvePipelineId`, `PanelId` (`lib/panel-scope.ts`); `isWonOpp` (`lib/opportunity-status.ts`); `groupCampaignsByFamily`, `CampaignTally` (`lib/pauta.ts`); `PANEL_TIME_ZONE` (`lib/task-backlog.ts`); `ResolvedDateRange` (`lib/date-range.ts`).
+- Consumes: `MetaAdsData`, `Opportunity`, `Pauta`, `Pipeline` (`lib/types.ts`); `desarrolloOf`, `NO_DESARROLLO`, `PANEL_SCOPES`, `resolvePipelineId`, `PanelId` (`lib/panel-scope.ts`); `isWonOpp` (`lib/opportunity-status.ts`); `isDePauta`, `resolveCampaignName`, `buildPautaNameByContact`, `HasKey` (`lib/pauta.ts`); `PANEL_TIME_ZONE` (`lib/task-backlog.ts`).
 - Produces:
   ```ts
   export const NO_AD_ID = "Sin ad id"
   export const UNKNOWN_AD = "Ad no conectado"
-  export const STAGE_TARGETS: { key: "contactado" | "cita" | "visita" | "apartado" | "venta"; label: string; minIndex: number }[]
+  export type StageKey = "contactado" | "cita" | "visita" | "apartado" | "venta"
+  export const STAGE_TARGETS: { key: StageKey; label: string; minIndex: number }[]
   export function oppAdId(opp: Opportunity): string | null
-  export interface MetaIndex { byAd: Map<string, { ad: MetaAd; adset?: MetaAdset; campaign?: MetaCampaign; account?: MetaAccount }>; dailyByAd: Map<string, MetaDailyRow[]> }
+  export interface MetaIndex { byAd: Map<string, { ad; adset?; campaign?; account? }>; dailyByAd: Map<string, MetaDailyRow[]>; byName: Map<string, Set<string>> /* nombre plegado → campaignIds */ }
   export function buildMetaIndex(meta: MetaAdsData): MetaIndex
-  export function assignAdDesarrollos(meta: MetaAdsData, index: MetaIndex, allOpportunities: Opportunity[], pipelines: Pipeline[] | undefined): Map<string, string>
-  export function scopeMetaDaily(meta: MetaAdsData, desarrolloByAd: Map<string, string>, panel: PanelId, pipelines: Pipeline[] | undefined): MetaDailyRow[]
-  export function localDay(iso: string, timeZone?: string): string   // YYYY-MM-DD
+  export function buildPautaContacts(pautas: Pauta[]): Set<string>
+  export type LeadAttribution =
+    | { kind: "exact"; adId: string; campaignId: string | null }
+    | { kind: "byName"; name: string; campaignId: string }
+    | { kind: "unknownAd"; adId: string }
+    | { kind: "noAdId" }
+    | { kind: "notPauta" }
+  export interface AttributionContext { index: MetaIndex; pautaContacts: HasKey; pautaNameByContact: Map<string, string> }
+  export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAttribution
+  export function assignAdDesarrollos(meta, index, allOpportunities, pipelines): { byAd: Map<string, string>; mixed: string[] }
+  export function scopeMetaDaily(meta, desarrolloByAd: Map<string, string>, panel: PanelId, pipelines): MetaDailyRow[]
+  export function localDay(iso: string, timeZone?: string): string
   export function stageIndexOf(stage: string | undefined): number | null
-  export function reachedStage(opp: Opportunity, target: (typeof STAGE_TARGETS)[number]): boolean
-  export interface CostPerStage { spendByCurrency: Record<string, number>; mixedCurrency: boolean; leadsCrm: number; leadsMeta: number; noAdId: number; unknownAdLeads: number; stages: { key; label; reached: number; costPerResult: number | null; oppIds: string[] }[] }
-  export function buildCostPerStage(p: { opportunities: Opportunity[]; daily: MetaDailyRow[]; index: MetaIndex; accounts: MetaAccount[]; range: { start: string; end: string } | null }): CostPerStage
-  export interface CampaignPerformanceRow { campaignId: string; name: string; accountId: string; currency: string; spend; impressions; clicks; cpm: number | null; ctr: number | null; leadsMeta; leadsCrm; reached: Record<StageKey, number>; cpl: number | null; costPerApartado: number | null; costPerVenta: number | null; adIds: string[] }
-  export function buildCampaignPerformance(p: same as buildCostPerStage): CampaignPerformanceRow[]   // ordenado por gasto desc
+  export function reachedStage(opp: Opportunity, target: { key: StageKey; minIndex: number }): boolean
+  export interface CostPerStage { spendByCurrency; mixedCurrency; leadsCrm; leadsExact; leadsByName; leadsMeta; noAdId; unknownAdLeads; notPauta; stages: { key; label; reached; costPerResult: number | null; oppIds: string[] }[] }
+  export function buildCostPerStage(p: CostInput): CostPerStage
+  export interface CampaignPerformanceRow { campaignId; name; accountId; currency; spend; impressions; clicks; cpm; ctr; leadsMeta; leadsCrm; leadsByName; reached: Record<StageKey, number>; cpl; costPerApartado; costPerVenta; adIds: string[] }
+  export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
+  // CostInput = { opportunities; daily; ctx: AttributionContext; accounts; range: { start; end } | null }
   ```
 
 - [ ] **Step 1: Escribir el verify script**
@@ -2023,9 +2086,10 @@ git commit -m "feat(meta): paso meta en el sync, fila de carga, banner y rescate
 // scripts/verify-meta-attribution.ts
 // Verificación de lib/meta-attribution.ts. Correr: pnpm verify:meta-attribution
 //
-// Aquí se decide cuánto costó cada venta. La llave es el ad id, el desarrollo de
-// un ad se infiere, y el costo por etapa es por cohorte de creación. Un bug
-// aquí es un costo por venta que el cliente cree y que es falso.
+// Aquí se decide cuánto costó cada venta. La llave es el ad id; a falta de id,
+// el nombre del ad cuando es inequívoco; y una oportunidad que no es de pauta
+// (orgánica, referida, importada por CSV) nunca entra al costo. Un bug aquí es
+// un costo por venta que el cliente cree y que es falso.
 //
 // Envuelto en main() en vez de usar await de nivel superior: este paquete es CJS.
 import assert from "node:assert/strict";
@@ -2033,6 +2097,8 @@ import {
   NO_AD_ID,
   oppAdId,
   buildMetaIndex,
+  buildPautaContacts,
+  classifyLead,
   assignAdDesarrollos,
   scopeMetaDaily,
   localDay,
@@ -2041,9 +2107,11 @@ import {
   buildCostPerStage,
   buildCampaignPerformance,
   STAGE_TARGETS,
+  type AttributionContext,
 } from "../lib/meta-attribution";
+import { buildPautaNameByContact } from "../lib/pauta";
 import { NO_DESARROLLO } from "../lib/panel-scope";
-import type { MetaAdsData, Opportunity, Pipeline } from "../lib/types";
+import type { MetaAdsData, Opportunity, Pauta, Pipeline } from "../lib/types";
 
 const STAGES = [
   "00. Recibido", "01. Contactado", "02. Lead en Seguimiento", "03. Lead Calificado",
@@ -2053,13 +2121,14 @@ const STAGES = [
 const pipelines: Pipeline[] = [
   { id: "p-can", name: "Cañadas", stages: STAGES },
   { id: "p-atr", name: "Atria", stages: STAGES },
+  { id: "p-pal", name: "Palmyra", stages: STAGES },
 ];
 
 function opp(p: Partial<Opportunity> & { id: string }): Opportunity {
   return {
     name: p.id, pipelineId: "p-can", pipelineStageId: "x", status: "open",
     createdAt: "2026-08-10T15:00:00.000Z", contactId: "c-" + p.id, value: 0,
-    stage: "00. Recibido", pipelineName: "Cañadas",
+    stage: "00. Recibido", pipelineName: "Cañadas", source: "Pauta WhatsApp",
     ...p,
   };
 }
@@ -2081,8 +2150,10 @@ const meta: MetaAdsData = {
   ],
   ads: [
     { id: "a1", name: "Cañadas by El Mirador", adsetId: "s1" },
+    { id: "a1b", name: "Cañadas by El Mirador", adsetId: "s1" },   // mismo nombre, misma campaña → inequívoco
     { id: "a2", name: "Atria lofts", adsetId: "s2" },
-    { id: "a3", name: "Sin leads", adsetId: "s3" },
+    { id: "a3", name: "Terrenos desde $1.2 M", adsetId: "s3" },
+    { id: "a3b", name: "Atria lofts", adsetId: "s3" },             // "Atria lofts" en DOS campañas → ambiguo
   ],
   daily: [
     { adId: "a1", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
@@ -2095,22 +2166,63 @@ const meta: MetaAdsData = {
   failedAccounts: [],
 };
 
+const pautas: Pauta[] = [
+  { id: "P1", tipo: "Mensaje WhatsApp", nombrePauta: "Cañadas by El Mirador", createdAt: "2026-08-02T00:00:00.000Z", contactId: "c-11" },
+  { id: "P2", tipo: "Formulario", nombrePauta: "Atria lofts", createdAt: "2026-08-02T00:00:00.000Z", contactId: "c-12" },
+  { id: "P3", tipo: "Formulario", nombrePauta: "Sin nombre", createdAt: "2026-08-02T00:00:00.000Z", contactId: "c-13" },
+];
+
 async function main() {
-  // --- llave: adId, custom field, normalización, ausencia
+  // --- llave: attribution manda, custom field "ID Pauta" / "ID de Pauta" como fallback
   assert.equal(oppAdId(opp({ id: "o", adId: "120247808685340416" })), "120247808685340416");
-  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "ID de Pauta": " 1202478 " } })), "1202478");
-  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "id de pauta": "77" } })), "77", "nombre del campo insensible a mayúsculas");
+  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "ID Pauta": " 1202478 " } })), "1202478");
+  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "ID de Pauta": "77" } })), "77");
+  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "id pauta": "78" } })), "78", "nombre del campo insensible a mayúsculas");
+  assert.equal(oppAdId(opp({ id: "o", adId: "1", customFieldsResolved: { "ID Pauta": "2" } })), "1", "cuando difieren, manda la attribution nativa");
+  assert.equal(oppAdId(opp({ id: "o", customFieldsResolved: { "URL Pauta": "https://fb.me/x", "Nombre Pauta": "x" } })), null, "URL y nombre no son ids");
   assert.equal(oppAdId(opp({ id: "o", adId: "abc" })), null, "un id sin dígitos no es un ad id");
   assert.equal(oppAdId(opp({ id: "o" })), null);
   assert.equal(NO_AD_ID, "Sin ad id");
 
-  // --- índice
+  // --- índice: jerarquía y nombres plegados → campañas
   const index = buildMetaIndex(meta);
   assert.equal(index.byAd.get("a1")?.campaign?.id, "c1");
   assert.equal(index.byAd.get("a1")?.account?.currency, "MXN");
   assert.equal(index.dailyByAd.get("a1")?.length, 3);
+  assert.deepEqual([...index.byName.get("canadas by el mirador")!], ["c1"]);
+  assert.deepEqual([...index.byName.get("atria lofts")!].sort(), ["c2", "c3"]);
+  assert.deepEqual([...index.byName.get("iw - canadas - agosto")!], ["c1"], "los nombres de campaña también se indexan");
 
-  // --- desarrollo por moda de leads, por nombre, y sin desarrollo
+  // --- clasificación de un lead
+  const ctx: AttributionContext = {
+    index,
+    pautaContacts: buildPautaContacts(pautas),
+    pautaNameByContact: buildPautaNameByContact(pautas),
+  };
+  assert.deepEqual(classifyLead(opp({ id: "1", adId: "a1" }), ctx), { kind: "exact", adId: "a1", campaignId: "c1" });
+  assert.deepEqual(classifyLead(opp({ id: "9", adId: "zzz9" }), ctx), { kind: "unknownAd", adId: "zzz9" });
+  // sin id, con nombre en el custom field de la oportunidad → campaña única
+  assert.deepEqual(
+    classifyLead(opp({ id: "11", customFieldsResolved: { "Nombre Pauta": "Cañadas by El Mirador" } }), ctx),
+    { kind: "byName", name: "Cañadas by El Mirador", campaignId: "c1" }
+  );
+  // sin id ni custom field, pero el contacto tiene registro Pauta con nombre → campaña única
+  assert.deepEqual(classifyLead(opp({ id: "11", contactId: "c-11", source: undefined }), ctx), {
+    kind: "byName", name: "Cañadas by El Mirador", campaignId: "c1",
+  });
+  // nombre ambiguo (dos campañas) → NO se atribuye; queda como pauta sin id
+  assert.deepEqual(classifyLead(opp({ id: "12", contactId: "c-12" }), ctx), { kind: "noAdId" });
+  // nombre "Sin nombre" del Make → no cuenta como nombre
+  assert.deepEqual(classifyLead(opp({ id: "13", contactId: "c-13" }), ctx), { kind: "noAdId" });
+  // de pauta por source, sin id ni nombre
+  assert.deepEqual(classifyLead(opp({ id: "8", source: "Pauta Formulario" }), ctx), { kind: "noAdId" });
+  // orgánico: sin señal de pauta
+  assert.deepEqual(classifyLead(opp({ id: "r", source: "Referido" }), ctx), { kind: "notPauta" });
+  // importado por CSV: nunca es de pauta, aunque el pipeline sea de un desarrollo
+  assert.deepEqual(classifyLead(opp({ id: "csv", source: undefined, attributionMedium: "csv_import", pipelineId: "p-pal" }), ctx), { kind: "notPauta" });
+  assert.deepEqual(classifyLead(opp({ id: "csv2", adId: "a1", attributionMedium: "csv_import" }), ctx), { kind: "notPauta" }, "csv_import gana incluso con ad id");
+
+  // --- desarrollo por moda de leads, por nombre, sin desarrollo, y mixtos
   const opps = [
     opp({ id: "1", adId: "a1", pipelineId: "p-can" }),
     opp({ id: "2", adId: "a1", pipelineId: "p-can" }),
@@ -2119,20 +2231,27 @@ async function main() {
     opp({ id: "5", adId: "a1", pipelineId: "p-can", stage: "07. Apartado", status: "lost" }),
     opp({ id: "6", adId: "a1", pipelineId: "p-can", stage: "08. Venta" }),
     opp({ id: "7", adId: "a2", pipelineId: "p-atr", createdAt: "2026-08-15T05:30:00.000Z" }),
-    opp({ id: "8", pipelineId: "p-can" }),
+    opp({ id: "8", pipelineId: "p-can", source: "Pauta Formulario" }),
     opp({ id: "9", adId: "zzz9", pipelineId: "p-can" }),
     opp({ id: "10", adId: "a1", pipelineId: "p-can", createdAt: "2026-07-31T23:30:00.000Z" }),
+    opp({ id: "11", contactId: "c-11", pipelineId: "p-can", source: undefined, stage: "04. Cita Programada" }),
+    opp({ id: "r", pipelineId: "p-can", source: "Referido" }),
+    opp({ id: "csv", pipelineId: "p-pal", source: undefined, attributionMedium: "csv_import" }),
   ];
-  const desarrolloByAd = assignAdDesarrollos(meta, index, opps, pipelines);
+  const { byAd: desarrolloByAd, mixed } = assignAdDesarrollos(meta, index, opps, pipelines);
   assert.equal(desarrolloByAd.get("a1"), "Cañadas", "moda: 6 en Cañadas vs 1 en Atria");
+  assert.deepEqual(mixed, ["a1"], "a1 tiene leads en más de un desarrollo");
   assert.equal(desarrolloByAd.get("a2"), "Atria");
-  // a3 no tiene leads y su campaña no nombra ningún desarrollo
-  assert.equal(desarrolloByAd.get("a3"), NO_DESARROLLO);
-  // un ad sin leads cuya campaña nombra el desarrollo (sin acento)
-  const metaNamed = { ...meta, campaigns: [...meta.campaigns, { id: "c4", name: "IW - canadas - Lotes", accountId: "act_1" }], adsets: [...meta.adsets, { id: "s4", name: "Set", campaignId: "c4" }], ads: [...meta.ads, { id: "a4", name: "x", adsetId: "s4" }] };
-  assert.equal(assignAdDesarrollos(metaNamed, buildMetaIndex(metaNamed), opps, pipelines).get("a4"), "Cañadas");
+  assert.equal(desarrolloByAd.get("a3"), NO_DESARROLLO, "sin leads y sin nombre de desarrollo");
+  assert.equal(desarrolloByAd.get("a1b"), "Cañadas", "sin leads, pero la campaña dice Cañadas");
+  assert.equal(desarrolloByAd.get("a3b"), "Atria", "la campaña es 'Branding genérico', pero el nombre del AD dice Atria");
+  // un desarrollo que NO está en PANEL_SCOPES pero sí en los pipelines también se detecta por nombre
+  const withSeventh: Pipeline[] = [...pipelines, { id: "p-7", name: "Nuevo Bosque", stages: STAGES }];
+  const metaNoLeads = { ...meta, ads: [{ id: "n1", name: "Nuevo Bosque lotes", adsetId: "s1" }], daily: [] };
+  const r2 = assignAdDesarrollos(metaNoLeads, buildMetaIndex(metaNoLeads), [], withSeventh);
+  assert.equal(r2.byAd.get("n1"), "Nuevo Bosque");
 
-  // --- scope por panel: GENERAL devuelve la misma referencia
+  // --- scope por panel: GENERAL devuelve la misma referencia; el fallback por nombre y el scope coinciden
   assert.equal(scopeMetaDaily(meta, desarrolloByAd, "general", pipelines), meta.daily);
   const canDaily = scopeMetaDaily(meta, desarrolloByAd, "canadas", pipelines);
   assert.deepEqual(canDaily.map((d) => d.adId), ["a1", "a1", "a1"]);
@@ -2141,6 +2260,7 @@ async function main() {
   // --- día local: 2026-07-31T23:30Z es 31 de julio en CDMX (UTC-6); 2026-08-15T05:30Z es 14 de agosto
   assert.equal(localDay("2026-07-31T23:30:00.000Z"), "2026-07-31");
   assert.equal(localDay("2026-08-15T05:30:00.000Z"), "2026-08-14");
+  assert.equal(localDay("no-es-fecha"), "");
 
   // --- etapas
   assert.equal(stageIndexOf("05. Visita al Desarrollo"), 5);
@@ -2155,48 +2275,51 @@ async function main() {
 
   // --- costo por etapa, agosto, GENERAL
   const range = { start: "2026-08-01", end: "2026-08-31" };
-  const cost = buildCostPerStage({ opportunities: opps, daily: meta.daily, index, accounts: meta.accounts, range });
+  const cost = buildCostPerStage({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range });
   assert.deepEqual(cost.spendByCurrency, { MXN: 250, USD: 30 });
   assert.equal(cost.mixedCurrency, true);
-  // leads CRM: creadas en agosto (día local) con adId en el índice → 1,2,3,4,5,6 (a1) + 7 (a2, 14 ago local) = 7; la 10 es 31 de julio; la 9 tiene ad desconocido; la 8 no tiene id
-  assert.equal(cost.leadsCrm, 7);
+  // exactos en agosto (día local): 1,2,3,4,5,6 (a1) + 7 (a2, 14 ago) = 7; la 10 es 31 de julio
+  assert.equal(cost.leadsExact, 7);
+  assert.equal(cost.leadsByName, 1, "la 11, por el registro Pauta del contacto");
+  assert.equal(cost.leadsCrm, 8, "exactos + por nombre");
   assert.equal(cost.leadsMeta, 7, "4+2 msg + 1 form");
-  assert.equal(cost.noAdId, 1);
-  assert.equal(cost.unknownAdLeads, 1);
+  assert.equal(cost.noAdId, 1, "la 8: de pauta, sin id ni nombre");
+  assert.equal(cost.unknownAdLeads, 1, "la 9");
+  assert.equal(cost.notPauta, 2, "referido + csv_import; nunca entran al costo");
   const byKey = Object.fromEntries(cost.stages.map((s) => [s.key, s]));
-  assert.equal(byKey.contactado.reached, 3, "4 (05), 5 (07), 6 (08)");
+  assert.equal(byKey.contactado.reached, 4, "4 (05), 5 (07), 6 (08), 11 (04)");
+  assert.equal(byKey.cita.reached, 4);
   assert.equal(byKey.visita.reached, 3);
   assert.equal(byKey.apartado.reached, 2);
   assert.equal(byKey.venta.reached, 1);
   assert.deepEqual(byKey.venta.oppIds, ["6"]);
-  assert.equal(byKey.cita.reached, 3);
-  // con moneda mixta no hay costo por resultado consolidado
-  assert.equal(byKey.venta.costPerResult, null);
+  assert.equal(byKey.venta.costPerResult, null, "con moneda mixta no hay costo consolidado");
 
   // --- una sola moneda: costo = gasto / alcanzaron; sin alcanzaron → null
   const mxnDaily = meta.daily.filter((d) => d.adId !== "a3");
-  const costMxn = buildCostPerStage({ opportunities: opps, daily: mxnDaily, index, accounts: meta.accounts, range });
+  const costMxn = buildCostPerStage({ opportunities: opps, daily: mxnDaily, ctx, accounts: meta.accounts, range });
   assert.equal(costMxn.mixedCurrency, false);
   assert.equal(costMxn.stages.find((s) => s.key === "venta")?.costPerResult, 250);
   assert.equal(costMxn.stages.find((s) => s.key === "apartado")?.costPerResult, 125);
-  const nadie = buildCostPerStage({ opportunities: [opp({ id: "solo", adId: "a1" })], daily: mxnDaily, index, accounts: meta.accounts, range });
+  const nadie = buildCostPerStage({ opportunities: [opp({ id: "solo", adId: "a1" })], daily: mxnDaily, ctx, accounts: meta.accounts, range });
   assert.equal(nadie.stages.find((s) => s.key === "venta")?.costPerResult, null, "sin ventas → null, nunca ∞");
 
   // --- sin rango = toda la ventana
-  const all = buildCostPerStage({ opportunities: opps, daily: meta.daily, index, accounts: meta.accounts, range: null });
+  const all = buildCostPerStage({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range: null });
   assert.deepEqual(all.spendByCurrency, { MXN: 1249, USD: 30 });
-  assert.equal(all.leadsCrm, 8, "la 10 (julio) entra");
+  assert.equal(all.leadsExact, 8, "la 10 (julio) entra");
 
   // --- rendimiento por campaña, agosto
-  const rows = buildCampaignPerformance({ opportunities: opps, daily: meta.daily, index, accounts: meta.accounts, range });
+  const rows = buildCampaignPerformance({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range });
   assert.deepEqual(rows.map((r) => r.campaignId), ["c1", "c2", "c3"], "por gasto desc");
   const c1 = rows[0];
   assert.equal(c1.spend, 200);
   assert.equal(c1.currency, "MXN");
   assert.equal(c1.leadsMeta, 6);
-  assert.equal(c1.leadsCrm, 6);
+  assert.equal(c1.leadsCrm, 7, "6 exactos + la 11 por nombre");
+  assert.equal(c1.leadsByName, 1);
   assert.equal(c1.reached.venta, 1);
-  assert.equal(c1.cpl, 200 / 6);
+  assert.equal(c1.cpl, 200 / 7);
   assert.equal(c1.costPerVenta, 200);
   assert.equal(c1.cpm, 100, "200 / 2000 impresiones × 1000");
   assert.equal(c1.ctr, 0.05, "100 clics / 2000 impresiones");
@@ -2222,7 +2345,24 @@ main().catch((err) => {
 Run: `pnpm verify:meta-attribution`
 Expected: FAIL con `Cannot find module '../lib/meta-attribution'`.
 
-- [ ] **Step 2: Implementar `lib/meta-attribution.ts`**
+- [ ] **Step 2: `isDePauta` debe reconocer `source: "Pauta …"`**
+
+Hoy `isPaidTraffic` en `lib/pauta.ts` busca "meta"/"facebook"/… en `source`, así que **"Pauta WhatsApp" / "Pauta Formulario" — el 85 % de DRT — no cuentan como tráfico pagado** y `isDePauta` depende solo de la relación con el objeto Pauta (que un ~2 % no tiene). Es un hueco de la fuente de verdad, no del cruce, así que se corrige ahí — nunca se re-inlinea en `meta-attribution.ts`.
+
+En `lib/pauta.ts`, cambiar:
+```ts
+export const PAID_SOCIAL_SOURCES = ["meta", "facebook", "instagram", "tiktok", "fb", "snapchat", "pinterest"]
+```
+por:
+```ts
+// "pauta": Grupo DRT escribe el source como "Pauta WhatsApp" / "Pauta Formulario"
+// / "Pauta" (~85 % de sus oportunidades). Sin esta entrada, isDePauta dependía
+// solo de la relación con el objeto Pauta, que un ~2 % de los leads no tiene.
+export const PAID_SOCIAL_SOURCES = ["meta", "facebook", "instagram", "tiktok", "fb", "snapchat", "pinterest", "pauta"]
+```
+Efecto colateral deseado: el asistente (`lib/ai-tools.ts`, único otro consumidor de `isDePauta` en este fork) también cuenta esos leads como de pauta. (`origen-de-lead-criteria.tsx`, que CLAUDE.md menciona, ya no existe en este repo — corregir esa línea en Task 9.)
+
+- [ ] **Step 3: Implementar `lib/meta-attribution.ts`**
 
 ```ts
 // lib/meta-attribution.ts
@@ -2230,11 +2370,20 @@ Expected: FAIL con `Cannot find module '../lib/meta-attribution'`.
 // sin fetch. Lo prueba pnpm verify:meta-attribution y lo montan las cards de
 // costo (entrega ②) y la pestaña PAUTA (entrega ③).
 //
-// La llave es el AD ID (utmAdId / custom field "ID de Pauta"); el nombre solo
-// sirve para ubicar el desarrollo de un ad que no tiene leads. El costo por
-// etapa es por COHORTE DE CREACIÓN: gasto de la ventana ÷ leads creados en la
-// ventana que alcanzaron la etapa. Con un ciclo de meses, el costo por venta de
-// un periodo reciente siempre es alto; la UI lo dice en vez de fingir.
+// Tres niveles de atribución de un lead, en orden, y nunca mezclados:
+//   exact   — el AD ID (attributions[].utmAdId, o el custom field "ID Pauta").
+//   byName  — sin id, el NOMBRE del ad (custom field "Nombre Pauta" de la opp,
+//             o el registro Pauta del contacto) cuando ese nombre vive en UNA
+//             sola campaña de Meta. Se cuenta aparte: es inferencia, no dato.
+//   noAdId  — de pauta (isDePauta) pero sin nada que lo ate a un anuncio.
+// Lo que no es de pauta (orgánico, referido, importado por CSV) es notPauta y
+// jamás entra al costo por lead. Medido 2026-09-13: Palmyra y Zanda recibieron
+// ~3 000 oportunidades por CSV el 28-31 de agosto; sin esta cubeta el costo por
+// lead de agosto habría sido una mentira.
+//
+// El costo por etapa es por COHORTE DE CREACIÓN: gasto de la ventana ÷ leads
+// creados en la ventana que alcanzaron la etapa. Con un ciclo de meses, el costo
+// por venta de un periodo reciente siempre es alto; la UI lo dice en vez de fingir.
 //
 // No reparte gasto entre desarrollos, no convierte moneda y no toca lib/pauta.ts:
 // isDePauta sigue siendo "es de pauta"; esto es "cuánto costó".
@@ -2246,10 +2395,12 @@ import type {
   MetaCampaign,
   MetaDailyRow,
   Opportunity,
+  Pauta,
   Pipeline,
 } from "./types";
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
 import { isWonOpp } from "./opportunity-status";
+import { isDePauta, resolveCampaignName, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 
 /** Oportunidad de pauta sin ad id capturado: hueco de captura, en rojizo. */
@@ -2275,23 +2426,36 @@ function normalizeAdId(v: unknown): string | null {
   return /^\d+$/.test(s) ? s : null;
 }
 
+// "ID Pauta" (el poblado en DRT) e "ID de Pauta" (existe, casi vacío). Nunca
+// "URL Pauta" ni "Nombre Pauta".
+const AD_ID_FIELD = /^id\s*(de\s*)?pauta$/i;
+
+// La attribution nativa manda: es lo que GHL recibió del click-to-WhatsApp; el
+// custom field es una copia que escribe Make. Difieren en ~0.3 % de los casos.
 export function oppAdId(opp: Opportunity): string | null {
   const own = normalizeAdId(opp.adId);
   if (own) return own;
   const cf = opp.customFieldsResolved;
   if (!cf) return null;
   for (const [name, val] of Object.entries(cf)) {
-    if (name.toLowerCase() !== "id de pauta") continue;
-    return normalizeAdId(Array.isArray(val) ? val[0] : val);
+    if (!AD_ID_FIELD.test(name.trim())) continue;
+    const id = normalizeAdId(Array.isArray(val) ? val[0] : val);
+    if (id) return id;
   }
   return null;
 }
 
 // ── Índice ──────────────────────────────────────────────────────────────────
 
+function fold(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 export interface MetaIndex {
   byAd: Map<string, { ad: MetaAd; adset?: MetaAdset; campaign?: MetaCampaign; account?: MetaAccount }>;
   dailyByAd: Map<string, MetaDailyRow[]>;
+  /** Nombre plegado (de ad o de campaña) → campañas donde aparece. Base del nivel byName. */
+  byName: Map<string, Set<string>>;
 }
 
 export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
@@ -2299,38 +2463,98 @@ export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
   const campaigns = new Map(meta.campaigns.map((c) => [c.id, c]));
   const adsets = new Map(meta.adsets.map((s) => [s.id, s]));
   const byAd: MetaIndex["byAd"] = new Map();
+  const byName: MetaIndex["byName"] = new Map();
+  const addName = (name: string, campaignId: string | undefined) => {
+    if (!campaignId) return;
+    const k = fold(name);
+    if (!k) return;
+    const set = byName.get(k) ?? new Set<string>();
+    set.add(campaignId);
+    byName.set(k, set);
+  };
   for (const ad of meta.ads) {
     const adset = adsets.get(ad.adsetId);
     const campaign = adset ? campaigns.get(adset.campaignId) : undefined;
     const account = campaign ? accounts.get(campaign.accountId) : undefined;
     byAd.set(ad.id, { ad, adset, campaign, account });
+    addName(ad.name, campaign?.id);
   }
+  for (const c of meta.campaigns) addName(c.name, c.id);
   const dailyByAd = new Map<string, MetaDailyRow[]>();
   for (const d of meta.daily) {
     const arr = dailyByAd.get(d.adId) ?? [];
     arr.push(d);
     dailyByAd.set(d.adId, arr);
   }
-  return { byAd, dailyByAd };
+  return { byAd, dailyByAd, byName };
+}
+
+/** contactIds con al menos un registro Pauta — la mitad "objeto" de isDePauta. */
+export function buildPautaContacts(pautas: Pauta[]): Set<string> {
+  const s = new Set<string>();
+  for (const p of pautas) if (p.contactId) s.add(p.contactId);
+  return s;
+}
+
+// ── Clasificación de un lead ────────────────────────────────────────────────
+
+export type LeadAttribution =
+  | { kind: "exact"; adId: string; campaignId: string | null }
+  | { kind: "byName"; name: string; campaignId: string }
+  | { kind: "unknownAd"; adId: string }
+  | { kind: "noAdId" }
+  | { kind: "notPauta" };
+
+export interface AttributionContext {
+  index: MetaIndex;
+  pautaContacts: HasKey;
+  /** buildPautaNameByContact(allPautas), de lib/pauta.ts. */
+  pautaNameByContact: Map<string, string>;
+}
+
+// Una importación masiva no es un lead de pauta aunque traiga ad id copiado.
+function isImported(opp: Opportunity): boolean {
+  return (opp.attributionMedium ?? "").toLowerCase() === "csv_import";
+}
+
+export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAttribution {
+  if (isImported(opp)) return { kind: "notPauta" };
+  const adId = oppAdId(opp);
+  if (adId) {
+    const hit = ctx.index.byAd.get(adId);
+    return hit ? { kind: "exact", adId, campaignId: hit.campaign?.id ?? null } : { kind: "unknownAd", adId };
+  }
+  // Sin id: el nombre del ad, si es inequívoco. resolveCampaignName ya recorre
+  // utmCampaign → "Nombre Pauta" → utmContent → registro Pauta del contacto.
+  const name = resolveCampaignName(opp, ctx.pautaNameByContact);
+  if (name && name !== SIN_NOMBRE_CAMPAIGN) {
+    const campaigns = ctx.index.byName.get(fold(name));
+    if (campaigns && campaigns.size === 1) {
+      return { kind: "byName", name, campaignId: [...campaigns][0] };
+    }
+  }
+  return isDePauta(opp, ctx.pautaContacts) || !!name ? { kind: "noAdId" } : { kind: "notPauta" };
 }
 
 // ── Desarrollo de cada ad ───────────────────────────────────────────────────
 
-function fold(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
-
 // 1) la moda de los pipelines de sus leads (sobre el set SIN filtrar); 2) el
 // nombre de un desarrollo en campaña → adset → ad; 3) Sin desarrollo. El gasto
-// no se reparte: un ad es de UN desarrollo.
+// no se reparte: un ad es de UN desarrollo. `mixed` lista los ads con leads en
+// más de un desarrollo, para que la UI lo diga en vez de callarlo.
+//
+// El fallback por nombre devuelve el nombre REAL del pipeline (el mismo string
+// que desarrolloOf), no la etiqueta de PANEL_SCOPES: scopeMetaDaily compara
+// contra el pipeline, y una etiqueta distinta haría desaparecer esos ads del tab.
 export function assignAdDesarrollos(
   meta: MetaAdsData,
   index: MetaIndex,
   allOpportunities: Opportunity[],
   pipelines: Pipeline[] | undefined
-): Map<string, string> {
+): { byAd: Map<string, string>; mixed: string[] } {
   const votes = new Map<string, Map<string, number>>();
   for (const o of allOpportunities) {
+    if (isImported(o)) continue;
     const adId = oppAdId(o);
     if (!adId || !index.byAd.has(adId)) continue;
     const d = desarrolloOf(o, pipelines);
@@ -2340,14 +2564,34 @@ export function assignAdDesarrollos(
     votes.set(adId, m);
   }
 
-  const labels = Object.values(PANEL_SCOPES)
-    .filter((s) => s.pipelineId !== null)
-    .map((s) => ({ label: s.label, folded: fold(s.label) }));
+  // Agujas para el fallback por nombre: el nombre de cada pipeline (así un
+  // séptimo desarrollo aparece sin tocar PANEL_SCOPES) más las etiquetas de
+  // PANEL_SCOPES resueltas a su pipeline real. El valor siempre es el string que
+  // devolvería desarrolloOf, para que scopeMetaDaily lo encuentre.
+  const needles = new Map<string, string>();
+  for (const p of pipelines ?? []) {
+    const name = p.name?.trim();
+    if (name) needles.set(fold(name), name);
+  }
+  for (const panel of Object.keys(PANEL_SCOPES) as PanelId[]) {
+    const scope = PANEL_SCOPES[panel];
+    if (scope.pipelineId === null) continue;
+    const pipelineId = resolvePipelineId(pipelines, panel);
+    const real = pipelines?.find((x) => x.id === pipelineId)?.name?.trim();
+    const k = fold(scope.label);
+    if (!needles.has(k)) needles.set(k, real || scope.label);
+  }
+  // Las agujas más largas primero: "cañadas by el mirador" antes que "cañadas".
+  const labels = [...needles.entries()]
+    .map(([folded, name]) => ({ folded, name }))
+    .sort((a, b) => b.folded.length - a.folded.length);
 
-  const out = new Map<string, string>();
+  const byAd = new Map<string, string>();
+  const mixed: string[] = [];
   for (const ad of meta.ads) {
     const v = votes.get(ad.id);
     if (v && v.size > 0) {
+      if (v.size > 1) mixed.push(ad.id);
       let best = "";
       let bestN = -1;
       for (const [d, n] of v) {
@@ -2356,15 +2600,15 @@ export function assignAdDesarrollos(
           bestN = n;
         }
       }
-      out.set(ad.id, best);
+      byAd.set(ad.id, best);
       continue;
     }
     const entry = index.byAd.get(ad.id);
     const haystack = fold([entry?.campaign?.name, entry?.adset?.name, ad.name].filter(Boolean).join(" | "));
     const hit = labels.find((l) => haystack.includes(l.folded));
-    out.set(ad.id, hit ? hit.label : NO_DESARROLLO);
+    byAd.set(ad.id, hit ? hit.name : NO_DESARROLLO);
   }
-  return out;
+  return { byAd, mixed };
 }
 
 // Misma convención que scopeOpportunities: GENERAL devuelve el array original.
@@ -2376,8 +2620,8 @@ export function scopeMetaDaily(
 ): MetaDailyRow[] {
   if (panel === "general") return meta.daily;
   const pipelineId = resolvePipelineId(pipelines, panel);
-  const label = pipelines?.find((p) => p.id === pipelineId)?.name?.trim() ?? PANEL_SCOPES[panel].label;
-  return meta.daily.filter((d) => desarrolloByAd.get(d.adId) === label);
+  const name = pipelines?.find((p) => p.id === pipelineId)?.name?.trim() || PANEL_SCOPES[panel].label;
+  return meta.daily.filter((d) => desarrolloByAd.get(d.adId) === name);
 }
 
 // ── Cohorte y etapas ────────────────────────────────────────────────────────
@@ -2412,7 +2656,7 @@ function ratio(num: number, den: number): number | null {
 interface CostInput {
   opportunities: Opportunity[];
   daily: MetaDailyRow[];
-  index: MetaIndex;
+  ctx: AttributionContext;
   accounts: MetaAccount[];
   /** YYYY-MM-DD inclusivo, en la zona horaria del panel; null = toda la ventana. */
   range: { start: string; end: string } | null;
@@ -2421,12 +2665,17 @@ interface CostInput {
 export interface CostPerStage {
   spendByCurrency: Record<string, number>;
   mixedCurrency: boolean;
+  /** exact + byName: los que entran a la cohorte. */
   leadsCrm: number;
+  leadsExact: number;
+  leadsByName: number;
   leadsMeta: number;
-  /** Oportunidades de la cohorte sin ad id. */
+  /** De pauta, sin ad id ni nombre resoluble. */
   noAdId: number;
-  /** Oportunidades de la cohorte con ad id que no está en ninguna cuenta conectada. */
+  /** Con ad id que no está en ninguna cuenta conectada. */
   unknownAdLeads: number;
+  /** Orgánicos, referidos, importados: fuera del costo por definición. */
+  notPauta: number;
   stages: { key: StageKey; label: string; reached: number; costPerResult: number | null; oppIds: string[] }[];
 }
 
@@ -2439,7 +2688,7 @@ export function buildCostPerStage(p: CostInput): CostPerStage {
   let leadsMeta = 0;
   for (const d of p.daily) {
     if (!inRange(d.date, p.range)) continue;
-    const cur = currencyOfAd(p.index, d.adId);
+    const cur = currencyOfAd(p.ctx.index, d.adId);
     spendByCurrency[cur] = (spendByCurrency[cur] ?? 0) + d.spend;
     leadsMeta += d.leadsForm + d.leadsMsg;
   }
@@ -2447,23 +2696,34 @@ export function buildCostPerStage(p: CostInput): CostPerStage {
   const mixedCurrency = currencies.length > 1;
   const totalSpend = mixedCurrency ? null : (spendByCurrency[currencies[0] ?? ""] ?? 0);
 
-  let leadsCrm = 0;
+  let leadsExact = 0;
+  let leadsByName = 0;
   let noAdId = 0;
   let unknownAdLeads = 0;
+  let notPauta = 0;
   const cohort: Opportunity[] = [];
   for (const o of p.opportunities) {
     if (!inRange(localDay(o.createdAt), p.range)) continue;
-    const adId = oppAdId(o);
-    if (!adId) {
-      noAdId++;
-      continue;
+    const a = classifyLead(o, p.ctx);
+    switch (a.kind) {
+      case "exact":
+        leadsExact++;
+        cohort.push(o);
+        break;
+      case "byName":
+        leadsByName++;
+        cohort.push(o);
+        break;
+      case "unknownAd":
+        unknownAdLeads++;
+        break;
+      case "noAdId":
+        noAdId++;
+        break;
+      case "notPauta":
+        notPauta++;
+        break;
     }
-    if (!p.index.byAd.has(adId)) {
-      unknownAdLeads++;
-      continue;
-    }
-    leadsCrm++;
-    cohort.push(o);
   }
 
   const stages = STAGE_TARGETS.map((t) => {
@@ -2477,7 +2737,18 @@ export function buildCostPerStage(p: CostInput): CostPerStage {
     };
   });
 
-  return { spendByCurrency, mixedCurrency, leadsCrm, leadsMeta, noAdId, unknownAdLeads, stages };
+  return {
+    spendByCurrency,
+    mixedCurrency,
+    leadsCrm: leadsExact + leadsByName,
+    leadsExact,
+    leadsByName,
+    leadsMeta,
+    noAdId,
+    unknownAdLeads,
+    notPauta,
+    stages,
+  };
 }
 
 // ── Por campaña ─────────────────────────────────────────────────────────────
@@ -2493,7 +2764,9 @@ export interface CampaignPerformanceRow {
   cpm: number | null;
   ctr: number | null;
   leadsMeta: number;
+  /** exact + byName. */
   leadsCrm: number;
+  leadsByName: number;
   reached: Record<StageKey, number>;
   cpl: number | null;
   costPerApartado: number | null;
@@ -2506,7 +2779,7 @@ export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
   const rowFor = (campaignId: string): CampaignPerformanceRow => {
     let r = rows.get(campaignId);
     if (!r) {
-      const c = [...p.index.byAd.values()].find((e) => e.campaign?.id === campaignId);
+      const c = [...p.ctx.index.byAd.values()].find((e) => e.campaign?.id === campaignId);
       r = {
         campaignId,
         name: c?.campaign?.name ?? campaignId,
@@ -2519,6 +2792,7 @@ export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
         ctr: null,
         leadsMeta: 0,
         leadsCrm: 0,
+        leadsByName: 0,
         reached: { contactado: 0, cita: 0, visita: 0, apartado: 0, venta: 0 },
         cpl: null,
         costPerApartado: null,
@@ -2529,11 +2803,10 @@ export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
     }
     return r;
   };
-  const campaignOfAd = (adId: string) => p.index.byAd.get(adId)?.campaign?.id;
 
   for (const d of p.daily) {
     if (!inRange(d.date, p.range)) continue;
-    const cid = campaignOfAd(d.adId);
+    const cid = p.ctx.index.byAd.get(d.adId)?.campaign?.id;
     if (!cid) continue;
     const r = rowFor(cid);
     r.spend += d.spend;
@@ -2545,11 +2818,12 @@ export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
 
   for (const o of p.opportunities) {
     if (!inRange(localDay(o.createdAt), p.range)) continue;
-    const adId = oppAdId(o);
-    const cid = adId ? campaignOfAd(adId) : undefined;
-    if (!cid || !rows.has(cid)) continue;
-    const r = rows.get(cid)!;
+    const a = classifyLead(o, p.ctx);
+    if (a.kind !== "exact" && a.kind !== "byName") continue;
+    if (!a.campaignId || !rows.has(a.campaignId)) continue;
+    const r = rows.get(a.campaignId)!;
     r.leadsCrm++;
+    if (a.kind === "byName") r.leadsByName++;
     for (const t of STAGE_TARGETS) if (reachedStage(o, t)) r.reached[t.key]++;
   }
 
@@ -2565,7 +2839,7 @@ export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[]
 }
 ```
 
-- [ ] **Step 3: Correr el verify y tsc**
+- [ ] **Step 4: Correr el verify y tsc**
 
 Run: `pnpm verify:meta-attribution`
 Expected: `✅ verify:meta-attribution OK`
@@ -2573,11 +2847,11 @@ Expected: `✅ verify:meta-attribution OK`
 Run: `npx tsc --noEmit`
 Expected: sin salida.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add lib/meta-attribution.ts scripts/verify-meta-attribution.ts package.json
-git commit -m "feat(meta): cruce por ad id, desarrollo por ad y costo por etapa por cohorte"
+git add lib/meta-attribution.ts scripts/verify-meta-attribution.ts lib/pauta.ts package.json
+git commit -m "feat(meta): cruce por ad id con fallback por nombre, cohorte clasificada y desarrollo por ad"
 ```
 
 ---
@@ -2694,7 +2968,9 @@ export function MetaConnectionPill({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load])
 
-  const revoked = warnings.some((w) => w.key === "meta" && w.reason === "token_revoked")
+  const revoked = warnings.some(
+    (w) => w.key === "meta" && (w.reason === "token_revoked" || w.reason === "token_unreadable")
+  )
 
   const openDialog = () => {
     if (!state?.connected) return
@@ -2924,10 +3200,35 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
 - **De `actions` solo salen dos contadores**: `lead` (formularios) y
   `onsite_conversion.messaging_conversation_started_7d` (WhatsApp) — los dos `source`
   de DRT. `leadsMeta` vs `leadsCrm` es una reconciliación, no un duplicado.
-- **El desarrollo de un ad se infiere**: moda de los pipelines de sus leads, luego el
-  nombre de un desarrollo en campaña/adset/ad, luego `Sin desarrollo`. **El gasto no se
-  reparte** entre desarrollos ni se convierte de moneda (`mixedCurrency` apaga los
-  costos consolidados).
+- **Tres niveles de atribución de un lead, nunca mezclados** (`classifyLead`): `exact`
+  por ad id (`opp.adId` de la attribution nativa manda; el custom field **`ID Pauta`** —
+  así se llama el poblado, `ID de Pauta` existe casi vacío — es el fallback); `byName`
+  cuando no hay id pero el nombre del ad (`Nombre Pauta` de la opp o `nombre_de_la_pauta`
+  del registro Pauta del contacto) vive en UNA sola campaña de Meta; `noAdId` si es de
+  pauta y no hay nada; `notPauta` para orgánicos, referidos e **importados por CSV**
+  (`attributions[].medium === "csv_import"`, que gana incluso con ad id). Solo los dos
+  primeros entran al costo. Medido 2026-09-13: 63 % con ad id; el objeto Pauta no trae
+  ad id pero sí `nombre_de_la_pauta` (94 %), `desarrollo` y `formulario` al 100 %.
+- **Palmyra y Zanda ya no están en cero: ~1 559 y ~1 433 oportunidades cargadas por CSV
+  el 28-31 de agosto de 2026**, sin `source` ni ad id. Son base de datos, no leads de
+  pauta; la cubeta `notPauta` existe para que no se cuelen al costo por lead. La tabla
+  de "Six developments" arriba quedó vieja en ese renglón.
+- **El desarrollo de un ad se infiere** (`assignAdDesarrollos`): moda de los pipelines de
+  sus leads (los importados no votan), luego el nombre de un pipeline o etiqueta de
+  `PANEL_SCOPES` en campaña/adset/ad (agujas largas primero), luego `Sin desarrollo`.
+  Devuelve `mixed` (ads con leads en más de un desarrollo) para que la UI lo diga. **El
+  gasto no se reparte** entre desarrollos ni se convierte de moneda (`mixedCurrency`
+  apaga los costos consolidados). El valor siempre es el nombre real del pipeline —
+  el mismo string de `desarrolloOf` — para que `scopeMetaDaily` lo encuentre.
+- **`isDePauta` ahora reconoce `source: "Pauta …"`** (`"pauta"` en `PAID_SOCIAL_SOURCES`):
+  antes dependía solo de la relación con el objeto Pauta. `origen-de-lead-criteria.tsx`
+  ya no existe en este fork; la línea de arriba que lo menciona es herencia del panel
+  compartido.
+- **El callback OAuth exige la cookie `meta_oauth`** con el nonce del `state`: sin ella,
+  quien conozca la contraseña del panel podría iniciar el flujo con su propio Meta y
+  fijarle al cliente una conexión ajena. Y si `DASHBOARD_AUTH_SECRET` rota, el token deja
+  de descifrar: el paso `meta` reporta `error` con `reason: "token_unreadable"` (no
+  calla), y el banner pide reconectar.
 - **Costo por etapa = cohorte de creación**: gasto de la ventana ÷ oportunidades
   creadas en la ventana (día local CDMX) que alcanzaron la etapa; "alcanzó" es el
   prefijo numérico de la etapa actual ≥ el objetivo (una perdida en `05.` sí alcanzó
@@ -2959,22 +3260,36 @@ git commit -m "docs(meta): sección Meta Ads en CLAUDE.md, comandos y variables"
 
 ## Self-review
 
+**Revisión 2026-09-13 (doble chequeo pedido por el usuario: fugas, seguridad, cruce entre desarrollos, fallback sin ad id).** Cambios que produjo, ya integrados arriba:
+
+1. `oppAdId` hacía match exacto con "id de pauta"; el campo poblado es **`ID Pauta`**. Ahora `/^id\s*(de\s*)?pauta$/i`, y la attribution nativa manda cuando difieren (30 casos medidos).
+2. Nuevo nivel **`byName`** (nombre del ad → campaña única) y clasificación explícita de la cohorte (`exact | byName | unknownAd | noAdId | notPauta`), con `csv_import` como `notPauta` incondicional. Motivado por los ~3 000 registros importados a Palmyra/Zanda el 28-31 de agosto.
+3. `isDePauta` no reconocía `source: "Pauta …"`; se agrega `"pauta"` a `PAID_SOCIAL_SOURCES` en la fuente de verdad.
+4. **Fijación de conexión**: cookie `meta_oauth` con el nonce, exigida en el callback.
+5. **Secreto rotado**: `readMetaConnectionWithToken` devuelve `token: null` en vez de `null`; el sync emite `error` / `token_unreadable`; banner y píldora lo tratan como "reconectar".
+6. Logs de fallo de cuenta imprimen solo `err.message` (un `TypeError` de fetch trae la URL con token en `cause`).
+7. `assignAdDesarrollos` devuelve `{ byAd, mixed }`, resuelve el fallback por nombre al **nombre real del pipeline** (mismo string que `desarrolloOf`, para que `scopeMetaDaily` coincida) y usa los pipelines cargados como agujas (un séptimo desarrollo funciona sin tocar `PANEL_SCOPES`); los importados no votan.
+8. El bloque `meta` del sync se movió **después del transform** para usar `oppAdId` sobre oportunidades normalizadas.
+9. `origen-de-lead-criteria.tsx` no existe en este fork; se quitó de los archivos a tocar y se corrige la mención en CLAUDE.md.
+
+Revisado y sin cambios: el token no viaja en frames ni en `/api/meta/connection`; `graphGetAll` quita `access_token` del `paging.next`; `MetaApiError` cita ruta y código, no URL; HMAC del state y llave AES salen del mismo secreto por HKDF con `info` distinto; `back()` solo redirige a `/`; toda ruta pasa por `requireClient()`; la tabla se indexa por `client.id`; `preserveMetaAds` lee la fila del mismo cliente. Limitación conocida que se documenta en ②: `daily.date` está en la zona horaria de la **cuenta publicitaria**; si una cuenta no está en `America/Mexico_City`, el corte diario contra `createdAt` se desfasa hasta un día (`MetaAccount.timezone` lo expone para avisarlo).
+
 **Spec coverage.**
 - Conexión OAuth (usuario del sistema, `config_id`, sin scope) → Task 1 + 5. ✔
 - `meta_connection` con `product`, token cifrado, `token_kind`/`token_expires_at`, `available`/`selected`, `connected_at` conservado al reconectar → Task 2. ✔
-- Rutas `connect`/`callback`/`connection`/`accounts`/`DELETE`, códigos de error, preview 409, sin env 503 → Task 5. ✔ (`GET /connection` y `DELETE /connection` comparten archivo.)
-- `business_id`: el spec lo guarda; el callback lo deja en `null` porque `/me` de un token de usuario del sistema no lo expone directo y no hay consumidor en ①. La columna existe; WhatsApp lo llenará. Documentado en el código. ✔ (desviación menor, consciente)
+- Rutas `connect`/`callback`/`connection`/`accounts`/`DELETE`, códigos de error, preview 409, sin env 503, cookie de nonce → Task 5. ✔
+- `business_id`: la columna existe; el callback lo deja en `null` porque `/me` de un token de usuario del sistema no lo expone directo y no hay consumidor en ①. WhatsApp lo llenará. ✔ (desviación menor, consciente)
 - Cliente Graph: tres llamadas, chunk mensual, concurrencia 2, reintentos en 4/17/32/613/80004 y 5xx, 190 terminal, cuenta fallida aislada → Task 4. ✔
-- Ventana de historia (mes de la opp más vieja con adId, tope 24 m, hoy en CDMX) → Task 3 + 6. ✔
+- Ventana de historia (mes de la opp más vieja con ad id, tope 24 m, hoy en CDMX) → Task 3 + 6. ✔
 - Payload `metaAds`, tablas planas, `failedAccounts`, `SyncWarning.reason` → Task 3. ✔
-- Paso `meta` después de `opportunities`, no emitido sin conexión, `partial`/`error`, rescate del último bueno, token nunca en frames → Task 6. ✔
+- Paso `meta` después del transform, no emitido sin conexión, `partial`/`error`/`token_unreadable`, rescate del último bueno, token nunca en frames → Task 6. ✔
 - Loading row + banner copy → Task 6. ✔
-- Cruce: llave, índice, desarrollo por moda/nombre/`Sin desarrollo`, `scopeMetaDaily` con misma referencia en GENERAL, cohorte con día local, `reachedStage`, `null` sin división, `unknownAdLeads`, moneda mixta, `buildCampaignPerformance` ordenado por gasto → Task 7. ✔ (La agrupación por familia con `groupCampaignsByFamily` la hace la UI de ③ sobre estas filas; no se duplica aquí.)
-- Píldora: conectar / N cuentas / cambiar / reconectar / desconectar / revocado en rojo / avisos de `?meta=` / deshabilitada en preview, sin env, sin base → Task 8. ✔
+- Cruce: llave, índice con `byName`, `classifyLead`, desarrollo por moda/nombre/`Sin desarrollo` + `mixed`, `scopeMetaDaily` con misma referencia en GENERAL, cohorte con día local, `reachedStage`, `null` sin división, `unknownAdLeads`/`noAdId`/`notPauta`, moneda mixta, `buildCampaignPerformance` ordenado por gasto → Task 7. ✔ (La agrupación por familia con `groupCampaignsByFamily` la hace la UI de ③ sobre estas filas.)
+- Píldora: conectar / N cuentas / cambiar / reconectar / desconectar / revocado o ilegible en rojo / avisos de `?meta=` / deshabilitada en preview, sin env, sin base → Task 8. ✔
 - Env vars y docs → Task 5 (`.env.example`) + Task 9 (`CLAUDE.md`). ✔
 - Verify scripts: `meta-oauth`, `meta-connection-store`, `meta`, `meta-attribution` → Tasks 1, 2, 3, 7. ✔
-- Prueba contra realidad (cuadrar gasto con el Administrador de anuncios, Postgres caído) → Task 6 paso 6. ✔
+- Prueba contra realidad (cuadrar gasto con el Administrador de anuncios, fijación sin cookie, secreto rotado, Postgres caído) → Task 5 paso 6 y Task 6 paso 6. ✔
 
 **Placeholder scan.** Sin TBD/TODO. Cada paso de código trae el código. El único "si X entonces Y" abierto es el denominador de la barra de progreso en Task 6 paso 3, que depende de cómo esté calculado hoy en `loading-screen.tsx`; el paso dice exactamente qué hacer en cada caso.
 
-**Type consistency.** `MetaProduct` se define en `meta-oauth.ts` y lo importan el store y las rutas. `MetaAccountInfo` (store, con `status`) ≠ `MetaAccount` (payload, sin `status`): `fetchAccount` en Task 4 hace la proyección explícita. `SyncWarning` con `reason` se define en `lib/types.ts` y el hook lo re-exporta. `StageKey`/`STAGE_TARGETS` se usan con los mismos nombres en Task 7 y en su verify. `readMetaConnectionWithToken` es lo que llama el sync; `readMetaConnection` lo que llama la ruta de estado.
+**Type consistency.** `MetaProduct` se define en `meta-oauth.ts` y lo importan el store y las rutas. `MetaAccountInfo` (store, con `status`) ≠ `MetaAccount` (payload, sin `status`): `fetchAccount` en Task 4 hace la proyección explícita. `SyncWarning` con `reason` se define en `lib/types.ts` y el hook lo re-exporta. `StageKey`/`STAGE_TARGETS`/`AttributionContext`/`classifyLead` se usan con los mismos nombres en Task 7 y en su verify. `readMetaConnectionWithToken` (token `string | null`) es lo que llama el sync; `readMetaConnection` lo que llama la ruta de estado. `CostInput.ctx` reemplaza al antiguo `index` en `buildCostPerStage` y `buildCampaignPerformance`.
