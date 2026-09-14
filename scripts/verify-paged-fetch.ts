@@ -8,7 +8,13 @@
 //
 // Wrapped in main() rather than using top-level await: this package is CJS.
 import assert from "node:assert/strict";
-import { fanOutPages, cursorWalk, walkOffsetPages } from "../lib/paged-fetch";
+import {
+  fanOutPages,
+  cursorWalk,
+  walkOffsetPages,
+  bisectFanOut,
+  type TimeWindow,
+} from "../lib/paged-fetch";
 
 type Row = { id: string };
 
@@ -368,6 +374,159 @@ async function main() {
     const res = await walkOffsetPages<Row>({ fetchPage, pageSize: 100, cap: 5000 });
     assert.equal(res.records.length, 300);
     assert.equal(res.truncated, false, "una página vacía al final cierra el recorrido");
+  }
+
+  // ============ BISECT FAN-OUT ============
+  //
+  // Calca /objects/:key/records/search: filtra por ventana de createdAt y
+  // rechaza con 400 cualquier petición con page × pageSize > 10 000. Las filas
+  // sintéticas se reparten a lo largo de un año, con una mitad amontonada en
+  // un solo mes para forzar más de una división del mismo lado.
+  type Stamped = { id: string; createdAt: number };
+  const DAY = 86_400_000;
+  const T0 = Date.UTC(2026, 0, 1);
+  function windowedFetcher(rows: Stamped[], opts: { ceiling: number; failOn?: number[] }) {
+    const calls: { page: number; window: TimeWindow }[] = [];
+    const fetchPage = async (page: number, window: TimeWindow) => {
+      calls.push({ page, window });
+      if (opts.failOn?.includes(page)) throw new Error(`page ${page} is broken`);
+      if (page * 100 > opts.ceiling) throw new Error("400 Invalid request body");
+      const inWindow = rows.filter(
+        (r) =>
+          (window.gte === undefined || r.createdAt >= window.gte) &&
+          (window.lt === undefined || r.createdAt < window.lt)
+      );
+      const start = (page - 1) * 100;
+      return { records: inWindow.slice(start, start + 100), total: inWindow.length };
+    };
+    return { fetchPage, calls };
+  }
+  const stampedId = (r: Stamped) => r.id;
+  // 25 000 filas: 12 500 repartidas en 365 días y 12 500 dentro de marzo.
+  const bigSet: Stamped[] = [
+    ...Array.from({ length: 12_500 }, (_, i) => ({
+      id: `a${i}`,
+      createdAt: T0 + Math.floor((i / 12_500) * 365 * DAY),
+    })),
+    ...Array.from({ length: 12_500 }, (_, i) => ({
+      id: `b${i}`,
+      createdAt: T0 + 59 * DAY + Math.floor((i / 12_500) * 31 * DAY),
+    })),
+  ];
+
+  // --- la regresión: más de 10 000 registros ya no pierde nada
+  {
+    const { fetchPage, calls } = windowedFetcher(bigSet, { ceiling: 10_000 });
+    const res = await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0 - 30 * DAY,
+      now: T0 + 400 * DAY,
+      sleep: noSleep,
+    });
+    assert.equal(res.records.length, 25_000, "cada fila llega exactamente una vez");
+    assert.equal(res.total, 25_000, "el total es la suma de las ventanas");
+    assert.deepEqual(res.missingPages, [], "ninguna ventana quedó incompleta");
+    assert.equal(res.missingEstimate, 0);
+    assert.ok(
+      calls.every((c) => c.page * 100 <= 10_000),
+      "nunca se pide una página que la API rechazaría"
+    );
+    assert.ok(
+      calls.some((c) => c.window.gte === undefined) && calls.some((c) => c.window.lt === undefined),
+      "las ventanas de los extremos quedan abiertas: nada fuera de floor/now se pierde"
+    );
+  }
+
+  // --- por debajo del techo no hay división: una sola ventana, sin filtro
+  {
+    const { fetchPage, calls } = windowedFetcher(bigSet.slice(0, 350), { ceiling: 10_000 });
+    const res = await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0 - 30 * DAY,
+      now: T0 + 400 * DAY,
+      sleep: noSleep,
+    });
+    assert.equal(res.records.length, 350);
+    assert.deepEqual(res.missingPages, []);
+    assert.ok(
+      calls.every((c) => c.window.gte === undefined && c.window.lt === undefined),
+      "una cuenta chica paga exactamente lo mismo que antes"
+    );
+    assert.equal(calls.length, 4, "sonda + 3 páginas, nada más");
+  }
+
+  // --- exactamente en el techo NO se divide (10 000 es alcanzable)
+  {
+    const { fetchPage, calls } = windowedFetcher(bigSet.slice(0, 10_000), { ceiling: 10_000 });
+    const res = await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0 - 30 * DAY,
+      now: T0 + 400 * DAY,
+      sleep: noSleep,
+    });
+    assert.equal(res.records.length, 10_000);
+    assert.ok(calls.every((c) => c.window.gte === undefined && c.window.lt === undefined));
+  }
+
+  // --- una página que falla dentro de una ventana sigue marcando parcial
+  {
+    const { fetchPage } = windowedFetcher(bigSet, { ceiling: 10_000, failOn: [7] });
+    const res = await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0 - 30 * DAY,
+      now: T0 + 400 * DAY,
+      sleep: noSleep,
+    });
+    assert.ok(res.missingPages.length > 0, "la parcialidad de una ventana sube al resultado");
+    assert.ok(res.records.length < 25_000);
+    assert.ok(res.missingEstimate > 0);
+  }
+
+  // --- conjunto vacío
+  {
+    const { fetchPage, calls } = windowedFetcher([], { ceiling: 10_000 });
+    const res = await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0,
+      now: T0 + DAY,
+      sleep: noSleep,
+    });
+    assert.equal(res.records.length, 0);
+    assert.deepEqual(res.missingPages, [], "vacío no es parcial");
+    assert.equal(calls.length, 1);
+  }
+
+  // --- progreso: monótono y acumulado a través de las ventanas
+  {
+    const { fetchPage } = windowedFetcher(bigSet, { ceiling: 10_000 });
+    const seen: number[] = [];
+    await bisectFanOut<Stamped>({
+      fetchPage,
+      pageSize: 100,
+      ceiling: 10_000,
+      idOf: stampedId,
+      floor: T0 - 30 * DAY,
+      now: T0 + 400 * DAY,
+      sleep: noSleep,
+      onProgress: (n) => seen.push(n),
+    });
+    assert.ok(seen.every((n, i) => i === 0 || n >= seen[i - 1]), "el contador nunca retrocede");
+    assert.equal(seen[seen.length - 1], 25_000, "el último progreso es el total");
   }
 
   console.log("verify-paged-fetch: all assertions passed");

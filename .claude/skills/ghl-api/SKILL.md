@@ -23,3 +23,13 @@ description: GoHighLevel REST API gotchas for this repo — customFields read-vs
 - **`/opportunities/search`** uses snake_case params (`location_id`, `pipeline_id`, etc.) — already handled by `useSnakeCaseLocationId` flag in `ghlFetch`.
 - **Conversation `type`** is numeric in some endpoints: `1=Phone`, `2=Email`, `3=FB Messenger`, `4=Review`, `5=Group SMS`.
 - **Required scopes**: `contacts.readonly/write`, `opportunities.readonly/write`, `conversations.readonly/write`.
+- **10,000-row ceiling on search endpoints, and two different escapes.**
+  `/opportunities/search` returns `400 SEARCH_USE_START_AFTER_PAGINATION` past row 10,000
+  and offers `startAfter`/`startAfterId` — `getAllOpportunities` walks it by cursor.
+  `/objects/:key/records/search` has the **same ceiling** (`page × pageLimit ≤ 10,000`,
+  any page size) but returns a bare `400 Invalid request body` and accepts **no cursor**
+  (`searchAfter` is rejected). The only way past is a `filters` entry
+  `{field:"createdAt", operator:"range", value:{gte?, lt?}}` (ISO strings; `lt`/`gte` as
+  *operators* are rejected for dates) — `getAllCustomObjectRecords` bisects the time
+  window with `bisectFanOut` until every window fits. Measured 2026-09-13 on DRT: 10,095
+  pautas, page 101 rejected deterministically.

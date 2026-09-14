@@ -13,7 +13,14 @@ import {
   note429,
   RATE_LIMIT_INTERVAL_MS,
 } from "./ghl-limiter";
-import { fanOutPages, cursorWalk, walkOffsetPages, type PagedResult } from "./paged-fetch";
+import {
+  fanOutPages,
+  cursorWalk,
+  walkOffsetPages,
+  bisectFanOut,
+  type PagedResult,
+  type TimeWindow,
+} from "./paged-fetch";
 
 const GHL_BASE_URL = "https://services.leadconnectorhq.com";
 // GHL's current API contract. Verified (read-only probe) to return shapes
@@ -941,6 +948,13 @@ export async function getCustomObjectSchema(objectKey: string): Promise<{ object
   return ghlFetch(`/objects/${objectKey}`, { version: "2023-02-21" });
 }
 
+// Fecha desde la que se biseca una ventana abierta por la izquierda. Solo
+// elige el punto de corte — nunca filtra — así que un registro anterior no se
+// pierde; solo cuesta un par de sondas vacías más en converger.
+const CUSTOM_OBJECT_FLOOR_MS = Date.UTC(2018, 0, 1);
+// page × pageLimit que /objects/:key/records/search se niega a pasar.
+const CUSTOM_OBJECT_ROW_CEILING = 10_000;
+
 export async function getAllCustomObjectRecords(
   objectKey: string,
   onProgress?: (count: number) => void
@@ -949,30 +963,37 @@ export async function getAllCustomObjectRecords(
   // locationId is required here, but in the request body — not the query string.
   // noQueryLocationId keeps it out of the query; ghlFetch still injects it into
   // the POST body (noBodyLocationId is left unset).
-  const fetchRecordsPage = (page: number) =>
-    ghlFetch<GHLCustomObjectRecordsResponse>(`/objects/${objectKey}/records/search`, {
+  //
+  // The window becomes a `range` filter on createdAt. Only `range` is accepted
+  // there for dates (`lt`/`gte` as operators are rejected), and both sides are
+  // optional — which is what lets the outer walk go unfiltered.
+  const fetchRecordsPage = (page: number, window: TimeWindow) => {
+    const range: Record<string, string> = {};
+    if (window.gte !== undefined) range.gte = new Date(window.gte).toISOString();
+    if (window.lt !== undefined) range.lt = new Date(window.lt).toISOString();
+    const filters =
+      Object.keys(range).length > 0
+        ? [{ field: "createdAt", operator: "range", value: range }]
+        : undefined;
+    return ghlFetch<GHLCustomObjectRecordsResponse>(`/objects/${objectKey}/records/search`, {
       method: "POST",
       version: "2023-02-21",
       noQueryLocationId: true,
-      body: { page, pageLimit },
+      body: { page, pageLimit, ...(filters ? { filters } : {}) },
     });
+  };
 
-  const first = await fetchRecordsPage(1);
-  const total = first.total ?? first.records.length;
-
-  const done = first.records.length >= total || first.records.length < pageLimit;
-  const totalPages = done ? 1 : Math.ceil(total / pageLimit);
-
-  // Same all-or-nothing hazard the opportunities fan-out had: one rejected page
-  // used to discard every page that landed. fanOutPages keeps them and retries
-  // only what failed.
-  return fanOutPages<GHLCustomObjectRecord>({
-    initial: first.records,
-    pages: Array.from({ length: totalPages - 1 }, (_, i) => i + 2),
-    fetchPage: (page) => fetchRecordsPage(page).then((r) => r.records),
+  // This endpoint has the same 10,000-row ceiling as /opportunities/search but
+  // no cursor to escape it (see bisectFanOut). Windows over createdAt are the
+  // only way past; under the ceiling nothing changes.
+  return bisectFanOut<GHLCustomObjectRecord>({
+    fetchPage: fetchRecordsPage,
     pageSize: pageLimit,
+    ceiling: CUSTOM_OBJECT_ROW_CEILING,
     idOf: (r) => r.id,
-    total,
+    floor: CUSTOM_OBJECT_FLOOR_MS,
+    // A day of slack so a record created mid-sync still lands on the closed side.
+    now: Date.now() + 86_400_000,
     onProgress,
     onRetry: (pages) =>
       console.warn(`[GHL] retrying ${pages.length} ${objectKey} page(s): ${pages.join(", ")}`),

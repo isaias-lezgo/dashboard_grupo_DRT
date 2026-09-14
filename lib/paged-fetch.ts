@@ -254,3 +254,122 @@ export async function cursorWalk<T, C>({
       truncated && total !== undefined ? Math.max(0, total - records.length) : 0,
   };
 }
+
+// ============ BISECT FAN-OUT ============
+//
+// Para los endpoints numerados que SÍ reportan total pero se niegan a pasar de
+// la fila 10 000: /objects/:key/records/search responde las páginas 1-100 y a
+// la 101 contesta, determinista y para siempre,
+//   400 {"message":"Invalid request body"}
+// sin ofrecer cursor. Medido en Grupo DRT el 2026-09-13 con 10 095 pautas: el
+// techo es page × pageLimit ≤ 10 000, sin importar el tamaño de página, y
+// `searchAfter` también se rechaza. Ningún reintento lo iba a arreglar.
+//
+// Lo que el endpoint sí acepta es un filtro `range` sobre `createdAt`, y eso
+// alcanza: si una ventana de tiempo trae más filas que el techo, se parte a la
+// mitad y se recorre cada mitad por separado. Cada ventana cabe bajo el techo y
+// se recorre con el fanOutPages de siempre, con su reintento por página.
+//
+// La ventana exterior NO lleva filtro y los extremos quedan abiertos
+// (`{lt: mid}` / `{gte: mid}`): una cuenta chica paga exactamente las mismas
+// peticiones que antes, y nada creado fuera de `floor`/`now` se pierde porque
+// esos límites solo sirven para elegir el punto de corte, nunca para filtrar.
+
+/** Ventana semiabierta [gte, lt) sobre createdAt, en epoch ms. Lado ausente = sin límite. */
+export interface TimeWindow {
+  gte?: number;
+  lt?: number;
+}
+
+export interface BisectFanOutOptions<T> {
+  /** Una página de una ventana. `total` es el de la ventana, no el global. */
+  fetchPage: (page: number, window: TimeWindow) => Promise<{ records: T[]; total?: number }>;
+  pageSize: number;
+  /** Filas que la API se niega a pasar (page × pageSize). */
+  ceiling: number;
+  idOf: (record: T) => string;
+  /** Cota inferior para bisecar una ventana abierta por la izquierda. */
+  floor: number;
+  /** Cota superior para bisecar una ventana abierta por la derecha. */
+  now: number;
+  /** Cuenta acumulada y deduplicada a través de todas las ventanas. */
+  onProgress?: (count: number) => void;
+  onRetry?: (pages: number[]) => void;
+  sleep?: (ms: number) => Promise<void>;
+  retryPauseMs?: number;
+}
+
+// Por debajo de esto ya no se parte: 10 000 registros creados dentro de un
+// mismo minuto no ocurren, y sin freno la recursión no terminaría.
+const MIN_WINDOW_MS = 60_000;
+
+export async function bisectFanOut<T>({
+  fetchPage,
+  pageSize,
+  ceiling,
+  idOf,
+  floor,
+  now,
+  onProgress,
+  onRetry,
+  sleep,
+  retryPauseMs,
+}: BisectFanOutOptions<T>): Promise<PagedResult<T>> {
+  const seen = new Set<string>();
+  const records: T[] = [];
+  const missingPages: number[] = [];
+  let missingEstimate = 0;
+  let total = 0;
+
+  const absorb = (batch: T[]) => {
+    for (const r of batch) {
+      const id = idOf(r);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      records.push(r);
+    }
+    onProgress?.(records.length);
+  };
+
+  const walk = async (window: TimeWindow): Promise<void> => {
+    const first = await fetchPage(1, window);
+    const windowTotal = first.total ?? first.records.length;
+
+    const lo = window.gte ?? floor;
+    const hi = window.lt ?? now;
+    if (windowTotal > ceiling && hi - lo > MIN_WINDOW_MS) {
+      const mid = Math.floor((lo + hi) / 2);
+      await walk({ ...window, lt: mid });
+      await walk({ ...window, gte: mid });
+      return;
+    }
+
+    total += windowTotal;
+    const done = first.records.length >= windowTotal || first.records.length < pageSize;
+    const totalPages = done ? 1 : Math.ceil(windowTotal / pageSize);
+    // Las ventanas son semiabiertas, así que no se traslapan y el conteo
+    // parcial de esta se puede sumar al acumulado sin doble cuenta.
+    const base = records.length;
+    const res = await fanOutPages<T>({
+      initial: first.records,
+      pages: Array.from({ length: totalPages - 1 }, (_, i) => i + 2),
+      fetchPage: (page) => fetchPage(page, window).then((r) => r.records),
+      pageSize,
+      idOf,
+      total: windowTotal,
+      onProgress: (n) => onProgress?.(base + n),
+      onRetry,
+      sleep,
+      retryPauseMs,
+    });
+    absorb(res.records);
+    // Los números de página se repiten entre ventanas; río arriba solo se lee
+    // si la lista está vacía o no, así que concatenar es honesto.
+    missingPages.push(...res.missingPages);
+    missingEstimate += res.missingEstimate;
+  };
+
+  await walk({});
+
+  return { records, total, missingPages, missingEstimate };
+}
