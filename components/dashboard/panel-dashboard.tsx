@@ -14,7 +14,6 @@ import type { ResolvedDateRange } from "@/lib/date-range"
 import type { ActivityStatus } from "@/hooks/use-conversation-activity"
 import type { PanelId } from "@/lib/panel-scope"
 import { DashboardShell } from "./dashboard-ui"
-import { OpportunityStatusChart } from "./opportunity-status-chart"
 import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-chart"
 import { AdvisorStageTable } from "./advisor-stage-table"
 import { AssignmentFunnelChart } from "./assignment-funnel-chart"
@@ -146,11 +145,12 @@ export function PanelDashboard({
           <StageFunnelChart {...shared} allAppointments={allAppointments} />
         </>
       )}
+      {/* "Oportunidades por estado" (opportunity-status-chart.tsx) ya no se monta
+          (2026-09-14, pedido del cliente); el archivo se conserva por si vuelve. */}
       <AdvisorStageTable {...shared} />
       {/* De las oportunidades de DRT ~17% no tienen asesor asignado, así que
           esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
       <AssignmentFunnelChart {...shared} />
-
       {/* Los dos gráficos de vigilancia de asesoras van solo por desarrollo
           (pedido del cliente, 2026-09-14): en GENERAL la vista es de embudo y
           negocio, no de operación; la vigilancia se hace en cada desarrollo. */}

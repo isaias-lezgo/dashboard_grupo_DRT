@@ -266,15 +266,17 @@ reintroduce a `sucursalField`-style seam here.
     `task-backlog-chart.tsx` (removed from GENERAL 2026-09-14 at the client's request:
     GENERAL is the business/funnel view, the advisor watch happens per desarrollo).
   - **Removed everywhere 2026-09-14**: `opportunity-win-rate-chart.tsx` ("Oportunidades
-    creadas y % ganadas") — see "Charts deliberately absent".
+    creadas y % ganadas", file deleted) and `opportunity-status-chart.tsx` ("Oportunidades
+    por estado", **file kept but unmounted** — `buildStatusByMonth` in
+    `lib/opportunity-breakdown.ts` is still used by the assignment funnel). Both at the
+    client's request; see "Charts deliberately absent".
 
-  The order, top to bottom: [GENERAL header] → `opportunity-status-chart.tsx` →
-  `assignment-funnel-chart.tsx` → `advisor-stage-table.tsx` → [stale matrix → task backlog]
-  → Origen / Canal pair → `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
-  `opportunity-status-chart.tsx`, `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
+  The order, top to bottom: [GENERAL header] → `advisor-stage-table.tsx` →
+  `assignment-funnel-chart.tsx` → [stale matrix → task backlog] → Origen / Canal pair →
+  `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
+  `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
   **exclusively** the opportunities with no `assignedTo`, stacked by creation month and
-  split by status. The assigned ones aren't drawn — "Oportunidades por estado" and the
-  advisor table cover those — but they DO count toward `monthTotal`, the denominator of
+  split by status. The assigned ones aren't drawn — the advisor table covers those — but they DO count toward `monthTotal`, the denominator of
   the "% del mes" in the tooltip and footnote: without it a raw orphan count loses the
   scale that makes it mean anything. The legend lists only buckets with records
   (`activeBuckets`), so a "Ganadas" series pinned at zero never appears. **~17% of DRT's
@@ -296,7 +298,7 @@ reintroduce a `sucursalField`-style seam here.
   not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
   over **two of three** dimensions, with a per-axis switch; choosing the other axis's
   dimension **transposes** the table instead of forcing a third onto the other axis).
-- **GENERAL lleva una cabecera propia, arriba de "Oportunidades por estado"**: tres montajes
+- **GENERAL lleva una cabecera propia, arriba de la tabla por desarrollo**: tres montajes
   de `desarrollo-counts-chart.tsx` (Registros / Visitas / Ventas por desarrollo, una sola
   agregación `buildDesarrolloCounts` para que las tres tarjetas ordenen igual) y
   `stage-funnel-chart.tsx` (el embudo de seis pasos de la estrategia: leads → precalificados
@@ -334,7 +336,10 @@ reintroduce a `sucursalField`-style seam here.
 - **`opportunity-win-rate-chart.tsx` ("Oportunidades creadas y % ganadas") was removed on
   2026-09-14 at the client's request.** The funnel of the GENERAL header already states the
   close rate, and the per-month cohort line read as noise at ~1%. Recoverable from git
-  history (commit before the removal) if they want it back.
+  history (commit before the removal) if they want it back. **`opportunity-status-chart.tsx`
+  ("Oportunidades por estado") was unmounted the same day**, also at the client's request;
+  the file stays in the repo. To bring it back, mount it in `panel-dashboard.tsx` — don't
+  rewrite it.
 - **Charts deliberately absent, and why.** `sales-pivot-table.tsx`,
   `sales-by-dimension-chart.tsx` and `lost-by-dimension-chart.tsx` were **removed** in the
   DRT fork. All three key off `Fecha de Cierre` × sucursal × servicio, and in this account
