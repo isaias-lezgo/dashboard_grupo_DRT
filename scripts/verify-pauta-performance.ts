@@ -17,6 +17,7 @@ import {
   hadCita,
   isPerdida,
   PAUTA_METRICS,
+  SIN_ID_PAUTA,
 } from "../lib/pauta-performance";
 
 let seq = 0;
@@ -234,15 +235,63 @@ async function main() {
     ];
     const row = rowFor(buildPautaPerformance(opps, pautas, []), "P");
     assert.deepEqual(
-      row.adIds,
+      row.related,
       [
-        { id: "222", count: 2 },
-        { id: "111", count: 1 },
-        { id: "333", count: 1 },
+        { label: "222", count: 2 },
+        { label: "111", count: 1 },
+        { label: "333", count: 1 },
       ],
       "por leads desc, empate por id; el custom field cuenta; sin id no entra"
     );
     assert.equal(row.cells.leads.count, 5, "el lead sin id sigue contando como lead");
+  }
+
+  // ── Por id: la fila es el anuncio, cada oportunidad UNA vez ──────────────
+  {
+    const pautas = [
+      pauta("c1", "Pauta A"),
+      pauta("c2", "Pauta A"),
+      pauta("c2", "Pauta B"), // c2 entró por las dos
+      pauta("c3", "Pauta B"),
+    ];
+    const opps = [
+      opp({ contactId: "c1", adId: "111", stage: "08. Venta", status: "won" }),
+      opp({ contactId: "c2", adId: "111", status: "lost" }),
+      opp({ contactId: "c3", adId: "222" }),
+      opp({ contactId: "c1" }), // con Pauta pero sin id
+      opp({ contactId: "c9" }), // sin Pauta
+    ];
+    const byId = buildPautaPerformance(opps, pautas, [], null, "id");
+    assert.deepEqual(
+      byId.rows.map((r) => r.name),
+      ["111", "222", SIN_ID_PAUTA],
+      "por leads desc, 'Sin id' al final"
+    );
+    const r111 = rowFor(byId, "111");
+    assert.equal(r111.cells.leads.count, 2);
+    assert.equal(r111.cells.ventas.count, 1);
+    assert.equal(r111.cells.perdidos.count, 1);
+    assert.deepEqual(
+      r111.related,
+      [
+        { label: "Pauta A", count: 2 },
+        { label: "Pauta B", count: 1 },
+      ],
+      "los nombres de Pauta pasan a ser la columna relacionada"
+    );
+    const sinId = rowFor(byId, SIN_ID_PAUTA);
+    assert.equal(sinId.missing, true);
+    assert.equal(sinId.cells.leads.count, 1);
+    assert.equal(byId.multiPauta, 0, "por id nadie cuenta doble");
+    assert.equal(byId.sinPauta.count, 1, "el universo es el mismo que por nombre");
+    assert.equal(byId.totals.leads.count, 4);
+    const sumRows = byId.rows.reduce((s, r) => s + r.cells.leads.count, 0);
+    assert.equal(sumRows, byId.totals.leads.count, "por id las filas suman exactamente el total");
+
+    // El mismo set por nombre sí cuenta doble a c2.
+    const byName = buildPautaPerformance(opps, pautas, [], null, "name");
+    assert.equal(byName.multiPauta, 1);
+    assert.equal(byName.totals.leads.count, 4, "los totales no cambian con el modo");
   }
 
   // ── Vacío ─────────────────────────────────────────────────────────────────

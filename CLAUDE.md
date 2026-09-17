@@ -317,7 +317,11 @@ reintroduce a `sucursalField`-style seam here.
   `MISSING_TEXT`. Collapses to 12 rows with "Ver N más". The **ID Pauta** column is
   the ad id via `oppAdId()` and is **one-to-many per name** — the name is the
   form/campaign, the id is the ad; "Cañadas by El Mirador" runs under 98 ids — so the
-  cell shows the id with the most leads plus "+N", and the hover lists the top ten),
+  cell shows the id with the most leads plus "+N", and the hover lists the top ten. A
+  **card-local toggle "Por nombre / Por ID"** (not a global filter) regroups the rows
+  by ad id: same universe and same Total row, but each opportunity falls in exactly one
+  row (`multiPauta` is 0), the Nombre Pauta column becomes the related one, and the
+  sentinel is "Sin id"),
   `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
   normalized **per column** and the "Sin asesor" row stays outside that normalization and
   outside the tint, because it is an order of magnitude larger. **In GENERAL the row is the

@@ -46,25 +46,32 @@ export interface PautaCell {
   oppIds: string[]
 }
 
-export interface PautaAdId {
-  id: string
-  /** Leads de la fila que traen este id. */
+/** Cómo se agrupa la tabla: por nombre de Pauta o por id del anuncio. */
+export type PautaGroupBy = "name" | "id"
+
+/** Sentinela de la fila sin `ID Pauta` en el modo por id. */
+export const SIN_ID_PAUTA = "Sin id"
+
+export interface PautaRelated {
+  label: string
+  /** Leads de la fila que traen este valor. */
   count: number
 }
 
 export interface PautaRow {
+  /** El nombre de la Pauta (por nombre) o el id del anuncio (por id). */
   name: string
-  /** true solo en la fila SIN_NOMBRE_CAMPAIGN, que va al final en rojizo. */
+  /** true en las filas centinela (SIN_NOMBRE_CAMPAIGN / SIN_ID_PAUTA), al final y en rojizo. */
   missing: boolean
   cells: Record<PautaMetric, PautaCell>
   /**
-   * Los `ID Pauta` (id del anuncio en Meta, vía `oppAdId`) de los leads de la
-   * fila, por leads desc. Es uno-a-muchos: el nombre de la Pauta es la
-   * campaña o el formulario, y un mismo nombre corre bajo varios anuncios
-   * (medido 2026-09-17: 68 de 167 nombres tienen 4+ ids). La UI muestra el
-   * dominante y cuántos más hay.
+   * La otra identidad, por leads desc: los `ID Pauta` de la fila cuando se
+   * agrupa por nombre, los nombres de Pauta cuando se agrupa por id. Es
+   * uno-a-muchos en ambos sentidos — el nombre es la campaña o el formulario
+   * y el id es el anuncio; "Cañadas by El Mirador" corre bajo 98 anuncios
+   * (medido 2026-09-17) — así que la UI muestra el dominante y cuántos más hay.
    */
-  adIds: PautaAdId[]
+  related: PautaRelated[]
 }
 
 export interface PautaPerformance {
@@ -78,7 +85,7 @@ export interface PautaPerformance {
    * desarrollo — un lead que el equipo movió de embudo. Fuera de la tabla.
    */
   otroDesarrollo: PautaCell
-  /** Oportunidades que cuentan en más de una fila. */
+  /** Oportunidades que cuentan en más de una fila. Siempre 0 por id: el id es uno por oportunidad. */
   multiPauta: number
   /** Tamaño del universo: todas las oportunidades recibidas. */
   universe: number
@@ -149,15 +156,16 @@ export function buildPautaPerformance(
   opps: Opportunity[],
   pautas: Pauta[],
   appointments: Appointment[],
-  desarrollo: string | null = null
+  desarrollo: string | null = null,
+  groupBy: PautaGroupBy = "name"
 ): PautaPerformance {
   const namesByContact = buildPautaNamesByContact(pautas, desarrollo)
   // Para distinguir "sin Pauta" de "con Pauta, pero de otro desarrollo".
   const anyPautaContacts = desarrollo ? buildPautaNamesByContact(pautas) : namesByContact
   const contactsWithCita = new Set(appointments.map((a) => a.contactId).filter(Boolean))
 
-  const byName = new Map<string, PautaRow>()
-  const adIdsByName = new Map<string, Map<string, number>>()
+  const byKey = new Map<string, PautaRow>()
+  const relatedByKey = new Map<string, Map<string, number>>()
   const totals = emptyCells()
   const sinPauta = emptyCell()
   const otroDesarrollo = emptyCell()
@@ -176,7 +184,12 @@ export function buildPautaPerformance(
       out.oppIds.push(opp.id)
       continue
     }
-    if (names.length > 1) multiPauta += 1
+    // Por nombre la oportunidad cae en cada Pauta de su contacto; por id cae
+    // UNA vez, en su anuncio, y los nombres pasan a ser la columna relacionada.
+    const adId = oppAdId(opp)
+    const keys = groupBy === "name" ? names : [adId ?? SIN_ID_PAUTA]
+    const related = groupBy === "name" ? (adId ? [adId] : []) : names
+    if (keys.length > 1) multiPauta += 1
 
     const hits: PautaMetric[] = ["leads"]
     if (hadCita(opp, contactsWithCita)) hits.push("citas")
@@ -185,28 +198,30 @@ export function buildPautaPerformance(
 
     // Los totales cuentan la oportunidad UNA vez, aunque caiga en dos filas.
     for (const m of hits) push(totals, m, opp.id)
-    const adId = oppAdId(opp)
-    for (const name of names) {
+    for (const key of keys) {
       const row =
-        byName.get(name) ??
-        { name, missing: name === SIN_NOMBRE_CAMPAIGN, cells: emptyCells(), adIds: [] }
-      byName.set(name, row)
+        byKey.get(key) ??
+        {
+          name: key,
+          missing: key === SIN_NOMBRE_CAMPAIGN || key === SIN_ID_PAUTA,
+          cells: emptyCells(),
+          related: [],
+        }
+      byKey.set(key, row)
       for (const m of hits) push(row.cells, m, opp.id)
-      if (adId) {
-        const ids = adIdsByName.get(name) ?? new Map<string, number>()
-        ids.set(adId, (ids.get(adId) ?? 0) + 1)
-        adIdsByName.set(name, ids)
-      }
+      const rel = relatedByKey.get(key) ?? new Map<string, number>()
+      for (const r of related) rel.set(r, (rel.get(r) ?? 0) + 1)
+      relatedByKey.set(key, rel)
     }
   }
 
-  for (const row of byName.values()) {
-    row.adIds = [...(adIdsByName.get(row.name)?.entries() ?? [])]
-      .map(([id, count]) => ({ id, count }))
-      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
+  for (const row of byKey.values()) {
+    row.related = [...(relatedByKey.get(row.name)?.entries() ?? [])]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "es"))
   }
 
-  const rows = [...byName.values()].sort((a, b) => {
+  const rows = [...byKey.values()].sort((a, b) => {
     if (a.missing !== b.missing) return a.missing ? 1 : -1
     return b.cells.leads.count - a.cells.leads.count || a.name.localeCompare(b.name, "es")
   })

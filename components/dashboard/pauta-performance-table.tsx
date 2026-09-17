@@ -16,9 +16,10 @@ import {
   buildPautaPerformance,
   PAUTA_METRIC_LABELS,
   PAUTA_METRICS,
-  type PautaAdId,
   type PautaCell,
+  type PautaGroupBy,
   type PautaMetric,
+  type PautaRelated,
 } from "@/lib/pauta-performance"
 import { PANEL_SCOPES, resolvePipelineId, scopeOpportunities, type PanelId } from "@/lib/panel-scope"
 import { cn } from "@/lib/utils"
@@ -45,28 +46,35 @@ const COLLAPSED_ROWS = 12
 /** Las tres columnas que se leen contra "Leads recibidos". */
 const RATE_METRICS: PautaMetric[] = ["citas", "ventas", "perdidos"]
 
+/** Las dos identidades de una Pauta, y cuál lleva la fila en cada modo. */
+const GROUPS: Record<PautaGroupBy, { toggle: string; key: string; related: string; empty: string }> = {
+  name: { toggle: "Por nombre", key: "Nombre Pauta", related: "ID Pauta", empty: "Sin id" },
+  id: { toggle: "Por ID", key: "ID Pauta", related: "Nombre Pauta", empty: "Sin nombre" },
+}
+
 /**
- * El ID Pauta de la fila: el id de anuncio que más leads trae, y cuántos ids
- * más hay. Un nombre de Pauta corre bajo varios anuncios, así que un solo id
- * sería mentira y la lista completa no cabe; la lista va en el `title`.
+ * La otra identidad de la fila: el valor que más leads trae y cuántos más hay.
+ * Un nombre de Pauta corre bajo varios anuncios (y un anuncio puede colgar de
+ * varios nombres), así que un solo valor sería mentira y la lista completa no
+ * cabe; la lista va en el `title`.
  */
-function AdIdCell({ adIds }: { adIds: PautaAdId[] }) {
-  if (adIds.length === 0) {
-    return <span className={cn("italic", MISSING_TEXT)}>Sin id</span>
+function RelatedCell({ related, mono, empty }: { related: PautaRelated[]; mono: boolean; empty: string }) {
+  if (related.length === 0) {
+    return <span className={cn("italic", MISSING_TEXT)}>{empty}</span>
   }
-  const [first, ...rest] = adIds
+  const [first, ...rest] = related
   // Un nombre puede correr bajo ~100 anuncios; el hover lista los diez que más
   // traen y resume el resto, o deja de ser un tooltip.
-  const shown = adIds.slice(0, 10)
+  const shown = related.slice(0, 10)
   const title = [
-    ...shown.map((a) => `${a.id} · ${n(a.count)} ${a.count === 1 ? "lead" : "leads"}`),
-    ...(adIds.length > shown.length ? [`… y ${n(adIds.length - shown.length)} ids más`] : []),
+    ...shown.map((r) => `${r.label} · ${n(r.count)} ${r.count === 1 ? "lead" : "leads"}`),
+    ...(related.length > shown.length ? [`… y ${n(related.length - shown.length)} más`] : []),
   ].join("\n")
   return (
-    <span title={title} className="font-mono text-[11px]">
-      {first.id}
+    <span title={title} className={cn("inline-flex max-w-[22rem] items-baseline", mono && "font-mono text-[11px]")}>
+      <span className="truncate">{first.label}</span>
       {rest.length > 0 && (
-        <span className="ml-1 font-sans text-[10px] text-muted-foreground">+{rest.length}</span>
+        <span className="ml-1 shrink-0 font-sans text-[10px] text-muted-foreground">+{rest.length}</span>
       )}
     </span>
   )
@@ -115,7 +123,10 @@ export function PautaPerformanceTable({
 }: PautaPerformanceTableProps) {
   const [drill, setDrill] = useState<DrillState>(DRILL_CLOSED)
   const [expanded, setExpanded] = useState(false)
+  // Estado local de la tarjeta, no un filtro global: solo cambia cómo se agrupa.
+  const [groupBy, setGroupBy] = useState<PautaGroupBy>("name")
   const scope = PANEL_SCOPES[panel]
+  const group = GROUPS[groupBy]
 
   // El nombre real del pipeline de la pestaña (null en GENERAL): es lo que el
   // objeto Pauta escribe en `desarrollo`, así que acota qué Pautas nombran fila.
@@ -131,9 +142,10 @@ export function PautaPerformanceTable({
         scopeOpportunities(opportunities, panel, pipelines),
         allPautas,
         allAppointments.length > 0 ? allAppointments : appointments,
-        desarrollo
+        desarrollo,
+        groupBy
       ),
-    [opportunities, panel, pipelines, allPautas, allAppointments, appointments, desarrollo]
+    [opportunities, panel, pipelines, allPautas, allAppointments, appointments, desarrollo, groupBy]
   )
 
   const { visibleRows, hiddenRows, hiddenLeads } = useMemo(() => {
@@ -176,11 +188,44 @@ export function PautaPerformanceTable({
         icon={Megaphone}
         total={perf.totals.leads.count}
         actions={
+          <>
+            <div
+              role="group"
+              aria-label="Agrupar la tabla"
+              className="inline-flex shrink-0 items-center rounded-full border border-border bg-muted/40 p-0.5"
+            >
+              {(Object.keys(GROUPS) as PautaGroupBy[]).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setGroupBy(id)}
+                  aria-pressed={groupBy === id}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide transition-colors",
+                    groupBy === id
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {GROUPS[id].toggle}
+                </button>
+              ))}
+            </div>
           <ScopePill
             label="Pauta × resultado"
             tooltip={
               <>
-                Cada fila es un <strong>nombre de Pauta</strong> del objeto Pautas. Una
+                Cada fila es un{" "}
+                {groupBy === "name" ? (
+                  <>
+                    <strong>nombre de Pauta</strong> del objeto Pautas
+                  </>
+                ) : (
+                  <>
+                    <strong>id de anuncio</strong> (campo <em>ID Pauta</em> de la oportunidad)
+                  </>
+                )}
+                . Una
                 oportunidad del embudo <strong>{scope.label}</strong> cae en la fila de la
                 Pauta de su <strong>contacto</strong>: la Pauta no lleva oportunidad, así que
                 el enlace es por contacto.{" "}
@@ -191,19 +236,27 @@ export function PautaPerformanceTable({
                     oportunidad aquí se reporta al pie, no en una fila.{" "}
                   </>
                 ) : null}
-                <strong>ID Pauta</strong> es el id del anuncio (campo{" "}
-                <em>ID Pauta</em> de la oportunidad): un mismo nombre corre bajo varios
-                anuncios, así que se muestra el que más leads trae y cuántos más hay; la lista
-                completa aparece al pasar el cursor.{" "}
+                Nombre e id son uno-a-muchos — un nombre corre bajo varios anuncios — así
+                que la columna <strong>{group.related}</strong> muestra el que más leads trae y
+                cuántos más hay; los diez principales aparecen al pasar el cursor.{" "}
                 <strong>Citas</strong> es etapa 04 o posterior, o
                 una cita en el objeto Citas — la misma regla del embudo de GENERAL.{" "}
                 <strong>Ventas</strong> es ganada; <strong>Perdidos</strong>, perdida o
-                abandonada. Un contacto que entró por dos pautas cuenta en las dos filas; la
-                fila <em>Total</em> cuenta cada oportunidad una sola vez. Las oportunidades
-                sin ningún registro Pauta quedan fuera de la tabla y se reportan al pie.
+                abandonada.{" "}
+                {groupBy === "name" ? (
+                  <>
+                    Un contacto que entró por dos pautas cuenta en las dos filas; la fila{" "}
+                    <em>Total</em> cuenta cada oportunidad una sola vez.{" "}
+                  </>
+                ) : (
+                  <>Por id cada oportunidad cae en una sola fila. </>
+                )}
+                Las oportunidades sin ningún registro Pauta quedan fuera de la tabla en los dos
+                modos y se reportan al pie.
               </>
             }
           />
+          </>
         }
       />
       <ChartCardContent>
@@ -227,10 +280,10 @@ export function PautaPerformanceTable({
                         "border-b border-r border-border px-3 py-2 text-left font-semibold"
                       )}
                     >
-                      Nombre Pauta
+                      {group.key}
                     </th>
                     <th className="min-w-[11rem] border-b border-border px-3 py-2 text-left font-medium text-muted-foreground">
-                      ID Pauta
+                      {group.related}
                     </th>
                     {PAUTA_METRICS.map((m) => (
                       <th
@@ -257,6 +310,7 @@ export function PautaPerformanceTable({
                           className={cn(
                             stickyCol,
                             "max-w-[22rem] truncate border-b border-r border-border px-3 py-1.5 text-left font-medium",
+                            groupBy === "id" && !row.missing && "font-mono text-[11px]",
                             row.missing && cn("italic", MISSING_TEXT)
                           )}
                           title={row.name}
@@ -264,7 +318,7 @@ export function PautaPerformanceTable({
                           {row.name}
                         </th>
                         <td className="border-b border-border px-3 py-1.5 text-left">
-                          <AdIdCell adIds={row.adIds} />
+                          <RelatedCell related={row.related} mono={groupBy === "name"} empty={group.empty} />
                         </td>
                         <td
                           onClick={() => openDrill(row.cells.leads, `${row.name} — leads recibidos`)}
@@ -348,7 +402,7 @@ export function PautaPerformanceTable({
               >
                 {expanded
                   ? "Ver menos"
-                  : `Ver ${hiddenRows} ${hiddenRows === 1 ? "pauta" : "pautas"} más · ${n(hiddenLeads)} ${hiddenLeads === 1 ? "lead" : "leads"} →`}
+                  : `Ver ${hiddenRows} ${groupBy === "id" ? (hiddenRows === 1 ? "id" : "ids") : hiddenRows === 1 ? "pauta" : "pautas"} más · ${n(hiddenLeads)} ${hiddenLeads === 1 ? "lead" : "leads"} →`}
               </button>
             )}
 
