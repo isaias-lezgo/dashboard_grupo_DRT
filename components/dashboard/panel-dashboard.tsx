@@ -17,6 +17,8 @@ import { DashboardShell } from "./dashboard-ui"
 import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-chart"
 import { AdvisorStageTable } from "./advisor-stage-table"
 import { AssignmentFunnelChart } from "./assignment-funnel-chart"
+import { LeadsPerDayChart } from "./leads-per-day-chart"
+import { PautaPerformanceTable } from "./pauta-performance-table"
 import { StaleOpportunityMatrix } from "./stale-opportunity-matrix"
 import { TaskBacklogChart } from "./task-backlog-chart"
 import { LostReasonMatrix } from "./lost-reason-matrix"
@@ -149,8 +151,23 @@ export function PanelDashboard({
           (2026-09-14, pedido del cliente); el archivo se conserva por si vuelve. */}
       <AdvisorStageTable {...shared} />
       {/* De las oportunidades de DRT ~17% no tienen asesor asignado, así que
-          esta tarjeta no es un detalle: es la fuga más grande del embudo. */}
-      <AssignmentFunnelChart {...shared} />
+          esta tarjeta no es un detalle: es la fuga más grande del embudo.
+          En los desarrollos va a media anchura junto a "Leads creados por día":
+          cuánto entra cada día y cuánto de eso nadie tomó, lado a lado. En
+          GENERAL sigue sola a ancho completo. */}
+      {panel === "general" ? (
+        <AssignmentFunnelChart {...shared} />
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <AssignmentFunnelChart {...shared} />
+          <LeadsPerDayChart {...shared} />
+        </div>
+      )}
+      {/* Qué pauta trae los leads que llegan a cita y a venta. En las siete
+          pestañas: la Pauta se resuelve por contacto y el embudo de la pestaña
+          acota las oportunidades, así que en GENERAL compara campañas y dentro
+          de un desarrollo compara las campañas de ese desarrollo. */}
+      <PautaPerformanceTable {...shared} allAppointments={allAppointments} />
       {/* Los dos gráficos de vigilancia de asesoras van solo por desarrollo
           (pedido del cliente, 2026-09-14): en GENERAL la vista es de embudo y
           negocio, no de operación; la vigilancia se hace en cada desarrollo. */}

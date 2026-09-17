@@ -102,6 +102,8 @@ pnpm verify:meta-oauth   # lib/meta-oauth.ts — state firmado, cifrado del toke
 pnpm verify:meta-connection-store # lib/meta-connection-store.ts — fila por (cliente, producto); usa la base si hay DATABASE_URL
 pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ventana de historia
 pnpm verify:meta-attribution # lib/meta-attribution.ts — llave por ad id, desarrollo por ad, costo por etapa
+pnpm verify:leads-per-day # lib/leads-per-day.ts — frontera de día en CDMX, relleno de huecos, fila "Sin fecha"
+pnpm verify:pauta-performance # lib/pauta-performance.ts — join Pauta → contacto → oportunidad → cita, doble conteo vs. totales
 npx tsc --noEmit         # REQUIRED: next build ignores TS errors, so a green build proves nothing
 
 # Caché de sincronización (Neon)
@@ -262,7 +264,9 @@ reintroduce a `sucursalField`-style seam here.
   file, never a second component):
   - **Only in GENERAL**: the header (three `desarrollo-counts-chart.tsx` mounts +
     `stage-funnel-chart.tsx`, see next bullet) and `lost-cross-matrix.tsx`.
-  - **Only in the desarrollo tabs**: `stale-opportunity-matrix.tsx` and
+  - **Only in the desarrollo tabs**: `leads-per-day-chart.tsx` (mounted 2026-09-17 in a
+    two-column grid next to `assignment-funnel-chart.tsx`; in GENERAL the monthly chart
+    stays alone at full width), `stale-opportunity-matrix.tsx` and
     `task-backlog-chart.tsx` (removed from GENERAL 2026-09-14 at the client's request:
     GENERAL is the business/funnel view, the advisor watch happens per desarrollo).
   - **Removed everywhere 2026-09-14**: `opportunity-win-rate-chart.tsx` ("Oportunidades
@@ -272,15 +276,45 @@ reintroduce a `sucursalField`-style seam here.
     client's request; see "Charts deliberately absent".
 
   The order, top to bottom: [GENERAL header] → `advisor-stage-table.tsx` →
-  `assignment-funnel-chart.tsx` → [stale matrix → task backlog] → Origen / Canal pair →
+  `assignment-funnel-chart.tsx` [+ `leads-per-day-chart.tsx` beside it, desarrollo tabs
+  only] → `pauta-performance-table.tsx` → [stale matrix → task backlog] → Origen / Canal pair →
   `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
-  `assignment-funnel-chart.tsx` ("Leads sin asesor por mes": the universe is
-  **exclusively** the opportunities with no `assignedTo`, stacked by creation month and
-  split by status. The assigned ones aren't drawn — the advisor table covers those — but they DO count toward `monthTotal`, the denominator of
-  the "% del mes" in the tooltip and footnote: without it a raw orphan count loses the
+  `assignment-funnel-chart.tsx` ("Leads sin asesor por semana" — **weekly since
+  2026-09-17** at the client's request, it was monthly before: the universe is
+  **exclusively** the opportunities with no `assignedTo`, stacked by creation week
+  (Monday–Sunday, cut on the `America/Mexico_City` day via `localDay`, never UTC) and
+  split by status. The assigned ones aren't drawn — the advisor table covers those — but they DO count toward `weekTotal`, the denominator of
+  the "% de la semana" in the tooltip and footnote: without it a raw orphan count loses the
   scale that makes it mean anything. The legend lists only buckets with records
   (`activeBuckets`), so a "Ganadas" series pinned at zero never appears. **~17% of DRT's
   opportunities are orphaned, so this card is the headline finding, not a footnote**),
+  `leads-per-day-chart.tsx` ("Leads creados por día", desarrollo tabs only: **all**
+  opportunities of the embudo — with and without advisor — one bar per `createdAt` day in
+  `America/Mexico_City`, days without leads drawn at zero, click-through to that day's
+  records. It is the complement of the orphan chart, not its subset, which is why the two
+  share a row: what came in each day next to how much of it nobody took. It respects the
+  global date filter exactly — with "Todo" it draws the whole history as a dense
+  histogram, by the client's choice, rather than clamping to a recent window),
+  `pauta-performance-table.tsx` ("Rendimiento por pauta", every tab, added 2026-09-17:
+  one row per **Pauta name** with Leads recibidos / Citas / Ventas / Perdidos. **The
+  unit is the opportunity and the link is the contact**: the Pauta object carries no
+  opportunity, so an opportunity lands in the row of its contact's Pauta(s), resolved
+  over `allPautas` (unfiltered — the record may predate the date window). **Inside a
+  desarrollo tab only the contact's Pautas whose `properties.desarrollo` is that
+  pipeline's name count** (populated 100%, values are exactly the pipeline names,
+  compared with `normalizeDesarrolloName`): without that cut, a contact who came in
+  through a Cañadas pauta and later opened an Atria opportunity put "Cañadas by El
+  Mirador" in Atria's table — true, but unreadable (client caught it 2026-09-17).
+  Opportunities whose Pautas are all of another desarrollo go to `otroDesarrollo`
+  (footnote + drill, not a row): 9 in Atria, 109 of 156 in Palmyra. GENERAL passes
+  `null` and keeps every Pauta. Citas is the
+  GENERAL funnel's union (`≥04` ∪ won ∪ a row in the Citas object, `allAppointments`);
+  Ventas is `isWonOpp`; Perdidos is `lost`/`abandoned`. **A contact who entered through
+  two pautas counts in both rows** — 18% of Pauta contacts do, measured 2026-09-17 —
+  while the Total row counts each opportunity once; the footnote states the overlap and
+  how many opportunities have no Pauta at all (those stay out of the table, with a
+  drill link, rather than becoming a row). "Sin nombre" is pinned last in
+  `MISSING_TEXT`. Collapses to 12 rows with "Ver N más"),
   `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
   normalized **per column** and the "Sin asesor" row stays outside that normalization and
   outside the tint, because it is an order of magnitude larger. **In GENERAL the row is the
@@ -640,7 +674,9 @@ bug class these modules were extracted to kill.
 | `lib/lost-reason-matrix.ts` | el cruce motivo de perdido × categoría (toma sus columnas de `buildCategoryBreakdown`, no re-normaliza) |
 | `lib/lost-cross-matrix.ts` | el cruce de perdidas sobre dos de tres dimensiones (servicio / origen / canal); **ambos** ejes pueden ser multi-valor |
 | `lib/advisor-breakdown.ts` | la matriz asesor × etapa del embudo + el desglose de estatus por asesor |
-| `lib/assignment-funnel.ts` | el universo de las oportunidades sin asesor, por mes y por estatus, con el total del mes como denominador |
+| `lib/assignment-funnel.ts` | el universo de las oportunidades sin asesor, por semana (lunes a domingo, día en CDMX) y por estatus, con el total de la semana como denominador; `weekKeyOf` / `weeksBetween` viven aquí |
+| `lib/pauta-performance.ts` | una fila por nombre de Pauta: leads / citas / ventas / perdidos por oportunidad, enlazada por **contacto** (`buildPautaNamesByContact`, acotada al `desarrollo` de la Pauta dentro de una pestaña); `hadCita` es la unión del embudo de GENERAL; totales por oportunidad distinta, `multiPauta`, `sinPauta` y `otroDesarrollo` explícitos |
+| `lib/leads-per-day.ts` | leads creados por día calendario en `America/Mexico_City` (vía `localDay` de `meta-attribution.ts`), huecos rellenados en cero, fila "Sin fecha" y el resumen del pie (promedio, pico) |
 | `lib/desarrollo-funnel.ts` | "alcanzó la etapa" por prefijo numérico (`stageIndexOf` / `reachedStage`), los recuentos registros/visitas/ventas por desarrollo y el embudo de seis pasos con la cita como unión etapa ∪ objeto Citas |
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |

@@ -57,8 +57,12 @@ export const DESARROLLO_PANELS = [
 /** Cubeta centinela para la oportunidad cuyo embudo no resolvemos. */
 export const NO_DESARROLLO = "Sin desarrollo"
 
-/** Sin acentos y en minúsculas: "Cañadas" tiene que casar con la llave `canadas`. */
-function normalize(s: string): string {
+/**
+ * Sin acentos y en minúsculas: "Cañadas" tiene que casar con la llave `canadas`.
+ * Exportada porque el objeto Pauta escribe el desarrollo como texto libre y hay
+ * que compararlo contra el nombre del pipeline con la misma tolerancia.
+ */
+export function normalizeDesarrolloName(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -80,7 +84,7 @@ export function resolvePipelineId(
   const scope = PANEL_SCOPES[panel]
   if (scope.pipelineId === null) return null
   const match = pipelines?.find(
-    (p) => normalize(p.name) === normalize(scope.label)
+    (p) => normalizeDesarrolloName(p.name) === normalizeDesarrolloName(scope.label)
   )
   return match?.id ?? scope.pipelineId
 }
