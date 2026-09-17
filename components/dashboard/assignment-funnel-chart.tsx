@@ -15,9 +15,9 @@ import type {
 } from "@/lib/types"
 import {
   activeBuckets,
-  buildUnassignedByMonth,
+  buildUnassignedByWeek,
   summarizeUnassigned,
-  type UnassignedMonthRow,
+  type UnassignedWeekRow,
 } from "@/lib/assignment-funnel"
 import { STATUS_LABELS, type StatusBucket } from "@/lib/opportunity-breakdown"
 import { PANEL_SCOPES, scopeOpportunities, type PanelId } from "@/lib/panel-scope"
@@ -94,7 +94,7 @@ export function AssignmentFunnelChart({
   const scope = PANEL_SCOPES[panel]
 
   const rows = useMemo(
-    () => buildUnassignedByMonth(scopeOpportunities(opportunities, panel, pipelines)),
+    () => buildUnassignedByWeek(scopeOpportunities(opportunities, panel, pipelines)),
     [opportunities, panel, pipelines]
   )
 
@@ -111,8 +111,8 @@ export function AssignmentFunnelChart({
     [allOpportunities]
   )
 
-  const openDrill = (monthKey: string, bucket: StatusBucket) => {
-    const row = rows.find((r) => r.key === monthKey)
+  const openDrill = (weekKey: string, bucket: StatusBucket) => {
+    const row = rows.find((r) => r.key === weekKey)
     if (!row) return
     const items = row.ids[bucket]
       .map((id) => oppById.get(id))
@@ -120,7 +120,7 @@ export function AssignmentFunnelChart({
     if (items.length === 0) return
     setDrill({
       open: true,
-      title: `${row.label} — ${STATUS_LABELS[bucket]}`,
+      title: `${row.longLabel} — ${STATUS_LABELS[bucket]}`,
       subtitle: `Embudo ${scope.label} · sin asesor asignado`,
       opportunities: items,
     })
@@ -134,21 +134,21 @@ export function AssignmentFunnelChart({
   return (
     <DashboardCard>
       <ChartCardHeader
-        title="Leads sin asesor por mes"
+        title="Leads sin asesor por semana"
         icon={UserX}
         total={summary.total}
         actions={
           <ScopePill
-            label="Por mes de creación"
+            label="Por semana de creación"
             tooltip={
               <>
                 Cuenta <strong>solo</strong> las oportunidades del embudo{" "}
                 <strong>{scope.label}</strong> que <strong>no tienen asesor asignado</strong>,
-                agrupadas por el mes en que se crearon y partidas por su estatus. Las que sí
-                tienen asesor no aparecen aquí: para eso están &ldquo;Oportunidades por
-                estado&rdquo; y la tabla por asesor. El porcentaje del tooltip es cuánto pesan
-                los huérfanos dentro de todos los leads de ese mes. Un mes que tuvo leads pero
-                ninguno huérfano se dibuja en cero, porque esa barra vacía es una buena
+                agrupadas por la semana en que se crearon (lunes a domingo, hora de México)
+                y partidas por su estatus. Las que sí tienen asesor no aparecen aquí: para eso
+                está la tabla por asesor. El porcentaje del tooltip es cuánto pesan los
+                huérfanos dentro de todos los leads de esa semana. Una semana que tuvo leads
+                pero ninguno huérfano se dibuja en cero, porque esa barra vacía es una buena
                 noticia.
               </>
             }
@@ -199,8 +199,9 @@ export function AssignmentFunnelChart({
                   tick={<MissingAwareTick />}
                   tickLine={false}
                   axisLine={false}
+                  // Con "Todo" son decenas de semanas: solo se rotulan las que caben.
                   interval="preserveStartEnd"
-                  minTickGap={12}
+                  minTickGap={24}
                 />
                 <YAxis
                   tick={CHART_TICK}
@@ -213,14 +214,14 @@ export function AssignmentFunnelChart({
                   content={
                     <NonZeroTooltipContent
                       labelFormatter={(value, payload) => {
-                        const row = payload?.[0]?.payload as UnassignedMonthRow | undefined
-                        if (!row || row.monthTotal === 0) return value
+                        const row = payload?.[0]?.payload as UnassignedWeekRow | undefined
+                        if (!row || row.weekTotal === 0) return value
                         return (
                           <>
-                            <div>{value}</div>
+                            <div>{row.longLabel}</div>
                             <div className="font-normal text-muted-foreground">
-                              {pctFmt.format(row.pctSinAsesor)}% de los {n(row.monthTotal)} leads
-                              del mes
+                              {pctFmt.format(row.pctSinAsesor)}% de los {n(row.weekTotal)} leads
+                              de la semana
                             </div>
                           </>
                         )
