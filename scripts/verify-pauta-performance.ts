@@ -25,6 +25,8 @@ function opp(o: {
   contactId?: string;
   stage?: string;
   status?: Opportunity["status"];
+  adId?: string;
+  idPautaCf?: string;
 }): Opportunity {
   return {
     id: `o${++seq}`,
@@ -37,6 +39,8 @@ function opp(o: {
     value: 0,
     stage: o.stage ?? "00. Recibido",
     pipelineName: "Cañadas",
+    adId: o.adId,
+    customFieldsResolved: o.idPautaCf ? { "ID Pauta": o.idPautaCf } : undefined,
   };
 }
 
@@ -216,6 +220,29 @@ async function main() {
     assert.equal(general.multiPauta, 1);
     assert.equal(general.otroDesarrollo.count, 0, "en GENERAL no existe 'otro desarrollo'");
     assert.equal(general.sinPauta.count, 1);
+  }
+
+  // ── ID Pauta: uno-a-muchos por nombre, el dominante primero ──────────────
+  {
+    const pautas = [pauta("c1", "P"), pauta("c2", "P"), pauta("c3", "P"), pauta("c4", "P"), pauta("c5", "P")];
+    const opps = [
+      opp({ contactId: "c1", adId: "111" }),
+      opp({ contactId: "c2", adId: "222" }),
+      opp({ contactId: "c3", adId: "222" }),
+      opp({ contactId: "c4", idPautaCf: "333" }), // solo el custom field
+      opp({ contactId: "c5" }), // sin id: no aparece
+    ];
+    const row = rowFor(buildPautaPerformance(opps, pautas, []), "P");
+    assert.deepEqual(
+      row.adIds,
+      [
+        { id: "222", count: 2 },
+        { id: "111", count: 1 },
+        { id: "333", count: 1 },
+      ],
+      "por leads desc, empate por id; el custom field cuenta; sin id no entra"
+    );
+    assert.equal(row.cells.leads.count, 5, "el lead sin id sigue contando como lead");
   }
 
   // ── Vacío ─────────────────────────────────────────────────────────────────

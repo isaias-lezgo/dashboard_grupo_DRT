@@ -314,7 +314,10 @@ reintroduce a `sucursalField`-style seam here.
   while the Total row counts each opportunity once; the footnote states the overlap and
   how many opportunities have no Pauta at all (those stay out of the table, with a
   drill link, rather than becoming a row). "Sin nombre" is pinned last in
-  `MISSING_TEXT`. Collapses to 12 rows with "Ver N más"),
+  `MISSING_TEXT`. Collapses to 12 rows with "Ver N más". The **ID Pauta** column is
+  the ad id via `oppAdId()` and is **one-to-many per name** — the name is the
+  form/campaign, the id is the ad; "Cañadas by El Mirador" runs under 98 ids — so the
+  cell shows the id with the most leads plus "+N", and the hover lists the top ten),
   `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
   normalized **per column** and the "Sin asesor" row stays outside that normalization and
   outside the tint, because it is an order of magnitude larger. **In GENERAL the row is the

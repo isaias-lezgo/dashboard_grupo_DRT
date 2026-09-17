@@ -28,6 +28,7 @@ import type { Appointment, Opportunity, Pauta } from "./types"
 import { isWonOpp } from "./opportunity-status"
 import { SIN_NOMBRE_CAMPAIGN } from "./pauta"
 import { reachedStage } from "./desarrollo-funnel"
+import { oppAdId } from "./meta-attribution"
 import { normalizeDesarrolloName } from "./panel-scope"
 
 export const PAUTA_METRICS = ["leads", "citas", "ventas", "perdidos"] as const
@@ -45,11 +46,25 @@ export interface PautaCell {
   oppIds: string[]
 }
 
+export interface PautaAdId {
+  id: string
+  /** Leads de la fila que traen este id. */
+  count: number
+}
+
 export interface PautaRow {
   name: string
   /** true solo en la fila SIN_NOMBRE_CAMPAIGN, que va al final en rojizo. */
   missing: boolean
   cells: Record<PautaMetric, PautaCell>
+  /**
+   * Los `ID Pauta` (id del anuncio en Meta, vía `oppAdId`) de los leads de la
+   * fila, por leads desc. Es uno-a-muchos: el nombre de la Pauta es la
+   * campaña o el formulario, y un mismo nombre corre bajo varios anuncios
+   * (medido 2026-09-17: 68 de 167 nombres tienen 4+ ids). La UI muestra el
+   * dominante y cuántos más hay.
+   */
+  adIds: PautaAdId[]
 }
 
 export interface PautaPerformance {
@@ -142,6 +157,7 @@ export function buildPautaPerformance(
   const contactsWithCita = new Set(appointments.map((a) => a.contactId).filter(Boolean))
 
   const byName = new Map<string, PautaRow>()
+  const adIdsByName = new Map<string, Map<string, number>>()
   const totals = emptyCells()
   const sinPauta = emptyCell()
   const otroDesarrollo = emptyCell()
@@ -169,13 +185,25 @@ export function buildPautaPerformance(
 
     // Los totales cuentan la oportunidad UNA vez, aunque caiga en dos filas.
     for (const m of hits) push(totals, m, opp.id)
+    const adId = oppAdId(opp)
     for (const name of names) {
       const row =
         byName.get(name) ??
-        { name, missing: name === SIN_NOMBRE_CAMPAIGN, cells: emptyCells() }
+        { name, missing: name === SIN_NOMBRE_CAMPAIGN, cells: emptyCells(), adIds: [] }
       byName.set(name, row)
       for (const m of hits) push(row.cells, m, opp.id)
+      if (adId) {
+        const ids = adIdsByName.get(name) ?? new Map<string, number>()
+        ids.set(adId, (ids.get(adId) ?? 0) + 1)
+        adIdsByName.set(name, ids)
+      }
     }
+  }
+
+  for (const row of byName.values()) {
+    row.adIds = [...(adIdsByName.get(row.name)?.entries() ?? [])]
+      .map(([id, count]) => ({ id, count }))
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
   }
 
   const rows = [...byName.values()].sort((a, b) => {

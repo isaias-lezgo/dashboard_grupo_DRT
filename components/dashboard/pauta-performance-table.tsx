@@ -16,6 +16,7 @@ import {
   buildPautaPerformance,
   PAUTA_METRIC_LABELS,
   PAUTA_METRICS,
+  type PautaAdId,
   type PautaCell,
   type PautaMetric,
 } from "@/lib/pauta-performance"
@@ -43,6 +44,33 @@ const COLLAPSED_ROWS = 12
 
 /** Las tres columnas que se leen contra "Leads recibidos". */
 const RATE_METRICS: PautaMetric[] = ["citas", "ventas", "perdidos"]
+
+/**
+ * El ID Pauta de la fila: el id de anuncio que más leads trae, y cuántos ids
+ * más hay. Un nombre de Pauta corre bajo varios anuncios, así que un solo id
+ * sería mentira y la lista completa no cabe; la lista va en el `title`.
+ */
+function AdIdCell({ adIds }: { adIds: PautaAdId[] }) {
+  if (adIds.length === 0) {
+    return <span className={cn("italic", MISSING_TEXT)}>Sin id</span>
+  }
+  const [first, ...rest] = adIds
+  // Un nombre puede correr bajo ~100 anuncios; el hover lista los diez que más
+  // traen y resume el resto, o deja de ser un tooltip.
+  const shown = adIds.slice(0, 10)
+  const title = [
+    ...shown.map((a) => `${a.id} · ${n(a.count)} ${a.count === 1 ? "lead" : "leads"}`),
+    ...(adIds.length > shown.length ? [`… y ${n(adIds.length - shown.length)} ids más`] : []),
+  ].join("\n")
+  return (
+    <span title={title} className="font-mono text-[11px]">
+      {first.id}
+      {rest.length > 0 && (
+        <span className="ml-1 font-sans text-[10px] text-muted-foreground">+{rest.length}</span>
+      )}
+    </span>
+  )
+}
 
 export interface PautaPerformanceTableProps {
   panel: PanelId
@@ -163,6 +191,10 @@ export function PautaPerformanceTable({
                     oportunidad aquí se reporta al pie, no en una fila.{" "}
                   </>
                 ) : null}
+                <strong>ID Pauta</strong> es el id del anuncio (campo{" "}
+                <em>ID Pauta</em> de la oportunidad): un mismo nombre corre bajo varios
+                anuncios, así que se muestra el que más leads trae y cuántos más hay; la lista
+                completa aparece al pasar el cursor.{" "}
                 <strong>Citas</strong> es etapa 04 o posterior, o
                 una cita en el objeto Citas — la misma regla del embudo de GENERAL.{" "}
                 <strong>Ventas</strong> es ganada; <strong>Perdidos</strong>, perdida o
@@ -197,6 +229,9 @@ export function PautaPerformanceTable({
                     >
                       Nombre Pauta
                     </th>
+                    <th className="min-w-[11rem] border-b border-border px-3 py-2 text-left font-medium text-muted-foreground">
+                      ID Pauta
+                    </th>
                     {PAUTA_METRICS.map((m) => (
                       <th
                         key={m}
@@ -228,6 +263,9 @@ export function PautaPerformanceTable({
                         >
                           {row.name}
                         </th>
+                        <td className="border-b border-border px-3 py-1.5 text-left">
+                          <AdIdCell adIds={row.adIds} />
+                        </td>
                         <td
                           onClick={() => openDrill(row.cells.leads, `${row.name} — leads recibidos`)}
                           className="cursor-pointer border-b border-border px-3 py-1.5 font-semibold hover:bg-muted/50"
@@ -273,6 +311,7 @@ export function PautaPerformanceTable({
                     >
                       Total
                     </th>
+                    <td className="px-3 py-2" />
                     {PAUTA_METRICS.map((m) => {
                       const cell = perf.totals[m]
                       const r = m === "leads" ? null : rate(cell, perf.totals.leads.count)
