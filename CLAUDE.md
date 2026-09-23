@@ -93,7 +93,7 @@ pnpm verify:lost-cross   # lib/lost-cross-matrix.ts — cruce perdidas servicio/
 pnpm verify:advisors     # lib/advisor-breakdown.ts — matriz asesor × etapa + cubetas de estatus
 pnpm verify:assignment   # lib/assignment-funnel.ts — universo sin-asesor vs. denominador del mes
 pnpm verify:desarrollo-funnel # lib/desarrollo-funnel.ts — recuentos por desarrollo + embudo de 6 pasos (cita = unión)
-pnpm verify:filters      # lib/panel-filters.ts — filtros globales de desarrollo y asesor
+pnpm verify:filters      # lib/panel-filters.ts — filtros globales (desarrollo, asesor, origen, canal, campaña)
 pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/canal SIN agrupar grafías
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
 pnpm verify:stale-matrix # lib/stale-opportunity-matrix.ts — cubetas de abandono en ambos ejes
@@ -673,7 +673,7 @@ bug class these modules were extracted to kill.
 | `lib/source-platform.ts` | "Origen de lead" platform bucketing + `PLATFORM_COLORS` / `PLATFORM_ORDER` |
 | `lib/csv.ts` | CSV cell escaping (`csvCell`, `buildCsv`) |
 | `lib/panel-scope.ts` | which pipeline each panel means, and the desarrollo dimension read from it |
-| `lib/panel-filters.ts` | los cuatro filtros globales de la barra (desarrollo, asesor, origen, canal) |
+| `lib/panel-filters.ts` | los cinco filtros globales de la barra (desarrollo, asesor, origen, canal, campaña) |
 | `lib/category-filter.ts` | las opciones de los menús de Origen/Canal — la contraparte **sin agrupar** de `opportunity-breakdown.ts`; no los fusiones (ver abajo) |
 | `lib/sales-pivot.ts` | la agregación del pivote de ventas — **sin montar** en DRT (ver "Charts deliberately absent") |
 | `lib/sales-series.ts` | la agregación de las barras apiladas; `include` / `monthOf` / `measure` la abren a universos que no son "ganadas × mes de cierre × dinero" **sin duplicar** el orden de series ni el plegado de "Otros" |
@@ -761,9 +761,9 @@ skill**.
   charts excluded:
   `data.opportunities` → `applyPanelFilters` → `scopedOpportunities`
   → `filterByDateRange` → `opportunities`.
-  **`lib/panel-filters.ts`** owns four menus: **Desarrollo**, **Asesor**, **Origen de lead**
-  y **Canal de contacto** (`multi-select-filter.tsx`, one generic component mounted four
-  times). Notes worth keeping:
+  **`lib/panel-filters.ts`** owns five menus: **Desarrollo**, **Asesor**, **Origen de lead**,
+  **Canal de contacto** y **Campaña** (`multi-select-filter.tsx`, one generic component
+  mounted five times). Notes worth keeping:
   - **Empty selection = no filter.** Do not "fix" this into an all-selected neutral state:
     with that convention a development newly added in the CRM would silently sit outside a
     filter the user believes is off.
@@ -793,8 +793,25 @@ skill**.
     `lib/opportunity-breakdown.ts` normalizan distinto — **no "arregles" esa duplicación
     fusionando los módulos**; `category-filter` solo le pide prestado
     `normalizeCategoryKey` para ordenar, nunca para unir dos opciones.
-  - Sus opciones se acotan al pipeline de la pestaña activa y al rango de fechas; las de
-    desarrollo y asesor no. Divergencia conocida, documentada en el spec del filtro.
+  - **Campaña** (added 2026-09-23) resolves through a fallback chain in
+    `resolveCampanas()` — each level only when the previous one gave no name, never summed:
+    **1. Meta** (the Meta campaign of the opp's ad via `oppAdId` →
+    `buildMetaCampaignByAd(data.metaAds)`; only when Meta is connected, and never for
+    `csv_import` records, same rule as cost-per-lead) → **2. objeto Pauta** (the names of
+    the contact's Pautas over the unfiltered `data.pautas` — the same names as the rows of
+    "Rendimiento por pauta"; a contact with two Pautas matches either) → **3. custom field
+    "Nombre Pauta"** of the opp (`pautaNameFromCustomFields`) → sentinel. A Pauta that exists
+    but came in unnamed does not block level 3. Two red sentinels close the menu:
+    `Sin nombre` (Pauta with no name) and `NO_PAUTA` = "Sin Pauta" (nothing at any level —
+    6,345 of 14,658 on 2026-09-23 without Meta; 2,987 of those are the CSV imports, and only
+    74 were rescued by level 3). **With Meta connected the menu mixes Meta campaign names
+    (opps with an ad id) and Pauta names (those without)** — that is the client's chosen
+    priority, not a bug. Inside a desarrollo tab only the object-Pauta names are narrowed to
+    that desarrollo; Meta and field names come from the opp itself and always list. Counts
+    use the same unscoped context as the filter, so the number beside an option is exactly
+    what remains after ticking it — `buildCampanaOptions(opps, ctx, allowed)`.
+  - Sus opciones (origen, canal y campaña) se acotan al pipeline de la pestaña activa y al
+    rango de fechas; las de desarrollo y asesor no. Divergencia conocida, documentada en el spec del filtro.
   - They filter **opportunities only** — contacts carry no desarrollo of their own.
   - The AI assistant is exempt, same as the date filter.
 - **`calls` is always empty** in live data — GHL doesn't expose a public calls endpoint in the standard API. **`tasks` is populated** via the location-wide `/locations/:id/tasks/search` endpoint (`searchLocationTasks`), fetched concurrently with the other datasets.

@@ -24,6 +24,7 @@ import {
   DESARROLLO_PANELS,
   NO_DESARROLLO,
   PANEL_SCOPES,
+  resolvePipelineId,
   scopeOpportunities,
   type PanelId,
 } from "@/lib/panel-scope"
@@ -31,11 +32,14 @@ import {
   activeFilterCount,
   advisorKeyOf,
   applyPanelFilters,
+  buildCampanaOptions,
   collectAdvisors,
   EMPTY_PANEL_FILTERS,
   NO_ASESOR,
   type PanelFilters,
 } from "@/lib/panel-filters"
+import { buildPautaNamesByContact } from "@/lib/pauta-performance"
+import { buildMetaCampaignByAd } from "@/lib/meta-attribution"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ConversationsChat } from "@/components/dashboard/conversations-chat"
@@ -46,6 +50,7 @@ import { useDashboardData } from "@/hooks/use-dashboard-data"
 import { useConversationsData } from "@/hooks/use-conversations-data"
 import { useConversationActivity } from "@/hooks/use-conversation-activity"
 import {
+  Flag,
   Building2,
   LayoutGrid,
   MapPin,
@@ -199,10 +204,28 @@ export default function DashboardPage() {
     () => new Map((data?.contacts ?? []).map((c) => [c.id, c])),
     [data?.contacts]
   )
+  // La campaña sale de Meta (por ad id, si está conectado), luego del objeto
+  // Pauta del contacto y luego del campo "Nombre Pauta" — ver resolveCampanas.
+  // Sin acotar a desarrollo ni a fecha: el filtro es global y el registro pudo
+  // crearse fuera de la ventana.
+  const campanaCtx = useMemo(
+    () => ({
+      pautaNamesByContact: buildPautaNamesByContact(data?.pautas ?? []),
+      metaCampaignByAd: buildMetaCampaignByAd(data?.metaAds),
+    }),
+    [data?.pautas, data?.metaAds]
+  )
   const [panelFilters, setPanelFilters] = useState<PanelFilters>(EMPTY_PANEL_FILTERS)
   const scopedOpportunities = useMemo(
-    () => applyPanelFilters(baseOpportunities, panelFilters, data?.pipelines, contactById),
-    [baseOpportunities, panelFilters, data?.pipelines, contactById]
+    () =>
+      applyPanelFilters(
+        baseOpportunities,
+        panelFilters,
+        data?.pipelines,
+        contactById,
+        campanaCtx
+      ),
+    [baseOpportunities, panelFilters, data?.pipelines, contactById, campanaCtx]
   )
 
   // Las opciones y sus conteos se calculan SIN los filtros de panel puestos: si
@@ -270,6 +293,38 @@ export default function DashboardPage() {
     [categoryBase, panelFilters.canal, contactById]
   )
 
+  // Campaña: misma base que origen y canal (pestaña + fecha, sin los filtros de
+  // panel). Dentro de un desarrollo, de los nombres que vienen del objeto Pauta
+  // solo se LISTAN los de ese desarrollo — el mismo corte que "Rendimiento por
+  // pauta" —, pero se cuentan con el contexto sin acotar que usa el filtro, para
+  // que el número sea lo que queda al marcar.
+  const campanaOptions = useMemo((): MultiSelectOption[] => {
+    if (activeTab === "conversations") return []
+    const pipelines = data?.pipelines ?? []
+    const pipelineId = resolvePipelineId(pipelines, activeTab)
+    let allowed: Set<string> | null = null
+    if (pipelineId !== null) {
+      const desarrollo =
+        pipelines.find((p) => p.id === pipelineId)?.name?.trim() || PANEL_SCOPES[activeTab].label
+      allowed = new Set(
+        [...buildPautaNamesByContact(data?.pautas ?? [], desarrollo).values()].flat()
+      )
+    }
+    const options = buildCampanaOptions(categoryBase, campanaCtx, allowed)
+    // Lo marcado se queda visible aunque la pestaña o la fecha lo dejen en cero:
+    // si desapareciera del menú no habría manera de desmarcarlo.
+    const present = new Set(options.map((o) => o.value))
+    const pinned = panelFilters.campanas
+      .filter((v) => !present.has(v))
+      .map((value) => ({ value, count: 0, muted: true }))
+    return [...options, ...pinned].map((o) => ({
+      value: o.value,
+      label: o.value,
+      count: o.count,
+      muted: o.muted,
+    }))
+  }, [activeTab, data?.pipelines, data?.pautas, categoryBase, campanaCtx, panelFilters.campanas])
+
   // Human label of the active date filter, for the PDF report cover.
   const periodLabel = useMemo(() => {
     const base = (() => {
@@ -302,6 +357,7 @@ export default function DashboardPage() {
     }
     if (panelFilters.origen.length) parts.push(`Origen: ${list(panelFilters.origen)}`)
     if (panelFilters.canal.length) parts.push(`Canal: ${list(panelFilters.canal)}`)
+    if (panelFilters.campanas.length) parts.push(`Campaña: ${panelFilters.campanas.join(", ")}`)
     return parts.join(" · ")
   }, [dateFilter.preset, dateRange, panelFilters, asesorOptions])
 
@@ -580,6 +636,15 @@ export default function DashboardPage() {
                 selected={panelFilters.canal}
                 onChange={(canal) => setPanelFilters((f) => ({ ...f, canal }))}
                 emptyMessage="Sin valores en este periodo"
+                searchable
+              />
+              <MultiSelectFilter
+                label="Campaña"
+                icon={Flag}
+                options={campanaOptions}
+                selected={panelFilters.campanas}
+                onChange={(campanas) => setPanelFilters((f) => ({ ...f, campanas }))}
+                emptyMessage="Sin Pautas en este periodo"
                 searchable
               />
               <ActiveFiltersPill

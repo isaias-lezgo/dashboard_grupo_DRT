@@ -122,6 +122,24 @@ export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
   return { byAd, dailyByAd, byName };
 }
 
+/**
+ * ad id → nombre de la campaña de Meta a la que pertenece. Base del primer
+ * nivel del filtro global de campaña (lib/panel-filters.ts). Sin conexión con
+ * Meta (`meta` null) el mapa sale vacío y el filtro cae al objeto Pauta.
+ */
+export function buildMetaCampaignByAd(meta: MetaAdsData | null | undefined): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!meta) return m;
+  const campaigns = new Map(meta.campaigns.map((c) => [c.id, c.name?.trim()]));
+  const adsets = new Map(meta.adsets.map((s) => [s.id, s.campaignId]));
+  for (const ad of meta.ads) {
+    const campaignId = adsets.get(ad.adsetId);
+    const name = campaignId ? campaigns.get(campaignId) : undefined;
+    if (name) m.set(ad.id, name);
+  }
+  return m;
+}
+
 /** contactIds con al menos un registro Pauta — la mitad "objeto" de isDePauta. */
 export function buildPautaContacts(pautas: Pauta[]): Set<string> {
   const s = new Set<string>();

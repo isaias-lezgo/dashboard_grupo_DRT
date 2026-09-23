@@ -1,20 +1,26 @@
-// Verification for lib/panel-filters.ts — los cuatro filtros globales de la
-// barra (desarrollo, asesor, origen, canal).
+// Verification for lib/panel-filters.ts — los cinco filtros globales de la
+// barra (desarrollo, asesor, origen, canal, campaña).
 //
 // Un filtro silenciosamente mal se ve igual que uno bien: números más chicos.
 // Por eso estas aserciones existen y por eso el módulo es puro y sin React.
 //
 // Correr con: pnpm verify:filters
 import assert from "node:assert/strict";
-import type { Opportunity, Pipeline } from "../lib/types";
+import type { Opportunity, Pauta, Pipeline } from "../lib/types";
+import { buildPautaNamesByContact } from "../lib/pauta-performance";
+import { SIN_NOMBRE_CAMPAIGN } from "../lib/pauta";
 import { NO_DESARROLLO, PANEL_SCOPES } from "../lib/panel-scope";
 import {
   activeFilterCount,
   advisorKeyOf,
   applyPanelFilters,
+  buildCampanaOptions,
+  campanasOf,
   collectAdvisors,
   EMPTY_PANEL_FILTERS,
   NO_ASESOR,
+  NO_PAUTA,
+  resolveCampanas,
   type PanelFilters,
 } from "../lib/panel-filters";
 
@@ -230,6 +236,143 @@ function main() {
     for (const id of ["atria", "canadas", "lasierra", "palmyra", "saggita", "zanda"] as const) {
       assert.ok(PANEL_SCOPES[id].pipelineId, `${id} tiene embudo de respaldo`);
     }
+  }
+
+  // 8. Campaña = nombre de Pauta, enlazado por CONTACTO. Un contacto con dos
+  // Pautas entra con cualquiera de las dos; el que no tiene ninguna cae en
+  // NO_PAUTA y sigue alcanzable; "Sin nombre" es otra cosa (Pauta sin nombre).
+  {
+    const a = opp({ pipelineId: ATRIA }); // Pauta de Atria
+    const b = opp({ pipelineId: ATRIA }); // Pautas de Atria y de Cañadas
+    const c = opp({ pipelineId: ATRIA }); // sin Pauta
+    const d = opp({ pipelineId: ATRIA }); // Pauta sin nombre
+    const e = opp({ pipelineId: ATRIA }); // solo Pauta de Cañadas
+    const pauta = (contactId: string, nombrePauta: string, desarrollo: string): Pauta => ({
+      id: `p-${contactId}-${nombrePauta}`,
+      tipo: "Formulario",
+      nombrePauta,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      contactId,
+      properties: { desarrollo },
+    });
+    const pautas = [
+      pauta(a.contactId!, "Atria Lanzamiento", "Atria"),
+      pauta(b.contactId!, "Atria Lanzamiento", "Atria"),
+      pauta(b.contactId!, "Cañadas by El Mirador", "Cañadas"),
+      pauta(d.contactId!, "", "Atria"),
+      pauta(e.contactId!, "Cañadas by El Mirador", "Cañadas"),
+    ];
+    const map = { pautaNamesByContact: buildPautaNamesByContact(pautas) };
+    const opps = [a, b, c, d, e];
+    const ids = (xs: Opportunity[]) => xs.map((x) => x.id);
+
+    assert.deepEqual(campanasOf(c, map), [NO_PAUTA]);
+    assert.deepEqual(campanasOf(d, map), [SIN_NOMBRE_CAMPAIGN]);
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ campanas: ["Cañadas by El Mirador"] }), PIPELINES, undefined, map)),
+      ids([b, e]),
+      "multi-Pauta: b entra por su segunda Pauta"
+    );
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ campanas: [NO_PAUTA] }), PIPELINES, undefined, map)),
+      ids([c]),
+      "Sin Pauta alcanza solo al contacto sin ningún registro"
+    );
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ campanas: ["Atria Lanzamiento", SIN_NOMBRE_CAMPAIGN] }), PIPELINES, undefined, map)),
+      ids([a, b, d]),
+      "dentro del menú es OR"
+    );
+    assert.equal(activeFilterCount(filters({ campanas: ["x", "y"] })), 2);
+
+    // Opciones en la pestaña de Atria: solo se LISTAN Pautas de Atria, pero el
+    // conteo es el del filtro — `e` no es "Sin Pauta" aunque su única Pauta sea
+    // de Cañadas. Centinelas al final.
+    const allowed = new Set([...buildPautaNamesByContact(pautas, "Atria").values()].flat());
+    assert.equal(map.pautaNamesByContact.size, 4);
+    assert.deepEqual(buildCampanaOptions(opps, map, allowed), [
+      { value: "Atria Lanzamiento", count: 2, muted: false },
+      { value: SIN_NOMBRE_CAMPAIGN, count: 1, muted: true },
+      { value: NO_PAUTA, count: 1, muted: true },
+    ]);
+    // En GENERAL se listan todas, por volumen.
+    assert.deepEqual(
+      buildCampanaOptions(opps, map).map((o) => [o.value, o.count]),
+      [
+        ["Atria Lanzamiento", 2],
+        ["Cañadas by El Mirador", 2],
+        [SIN_NOMBRE_CAMPAIGN, 1],
+        [NO_PAUTA, 1],
+      ]
+    );
+    // Sin contexto (modo degradado) todo es Sin Pauta, nunca una campaña inventada.
+    assert.equal(applyPanelFilters(opps, filters({ campanas: [NO_PAUTA] }), PIPELINES).length, 5);
+  }
+
+  // 9. La cadena de respaldo de la campaña: Meta (por ad id) → objeto Pauta →
+  // campo "Nombre Pauta" → centinela. Cada nivel entra solo si el anterior no
+  // dio nombre; nunca se suman.
+  {
+    const withField = (o: Opportunity, nombre: string): Opportunity => ({
+      ...o,
+      customFieldsResolved: { ...o.customFieldsResolved, "Nombre Pauta": nombre },
+    });
+    const withAd = (o: Opportunity, adId: string): Opportunity => ({
+      ...o,
+      customFieldsResolved: { ...o.customFieldsResolved, "ID Pauta": adId },
+    });
+    const pauta = (contactId: string, nombrePauta: string): Pauta => ({
+      id: `p-${contactId}`,
+      tipo: "Formulario",
+      nombrePauta,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      contactId,
+      properties: { desarrollo: "Atria" },
+    });
+
+    const conMeta = withField(withAd(opp({ pipelineId: ATRIA }), "111"), "Campo X"); // + Pauta
+    const soloPauta = withField(opp({ pipelineId: ATRIA }), "Campo X"); // + Pauta
+    const soloCampo = withField(opp({ pipelineId: ATRIA }), "Campo X");
+    const pautaSinNombre = withField(opp({ pipelineId: ATRIA }), "Campo Y"); // + Pauta ""
+    const adDesconocido = withAd(opp({ pipelineId: ATRIA }), "999"); // sin nada más
+    const importado: Opportunity = { ...withAd(opp({ pipelineId: ATRIA }), "111"), attributionMedium: "csv_import" };
+    const pautas = [
+      pauta(conMeta.contactId!, "Pauta A"),
+      pauta(soloPauta.contactId!, "Pauta A"),
+      pauta(pautaSinNombre.contactId!, ""),
+    ];
+    const metaCampaignByAd = new Map([["111", "Meta Campaña 1"]]);
+    const ctx = { pautaNamesByContact: buildPautaNamesByContact(pautas), metaCampaignByAd };
+    const sinMeta = { pautaNamesByContact: ctx.pautaNamesByContact };
+
+    assert.deepEqual(resolveCampanas(conMeta, ctx), { names: ["Meta Campaña 1"], source: "meta" });
+    assert.deepEqual(resolveCampanas(conMeta, sinMeta), { names: ["Pauta A"], source: "pauta" }, "sin Meta conectado cae al objeto Pauta");
+    assert.deepEqual(resolveCampanas(soloPauta, ctx), { names: ["Pauta A"], source: "pauta" }, "la Pauta gana al campo");
+    assert.deepEqual(resolveCampanas(soloCampo, ctx), { names: ["Campo X"], source: "campo" });
+    assert.deepEqual(resolveCampanas(pautaSinNombre, ctx), { names: ["Campo Y"], source: "campo" }, "una Pauta sin nombre no tapa el campo");
+    assert.deepEqual(resolveCampanas(adDesconocido, ctx), { names: [NO_PAUTA], source: "none" }, "un ad que Meta no devolvió no inventa campaña");
+    assert.deepEqual(resolveCampanas(importado, ctx), { names: [NO_PAUTA], source: "none" }, "un importado por CSV no toma la campaña de Meta");
+
+    // El filtro compara con lo mismo que resolveCampanas.
+    const opps = [conMeta, soloPauta, soloCampo, pautaSinNombre, adDesconocido, importado];
+    const ids = (xs: Opportunity[]) => xs.map((x) => x.id);
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ campanas: ["Meta Campaña 1"] }), PIPELINES, undefined, ctx)),
+      ids([conMeta])
+    );
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ campanas: ["Campo X"] }), PIPELINES, undefined, ctx)),
+      ids([soloCampo]),
+      "el campo solo cuenta cuando no hubo Meta ni Pauta"
+    );
+
+    // En una pestaña, `allowed` acota solo los nombres del objeto Pauta: los de
+    // Meta y los del campo vienen de la oportunidad y se listan siempre.
+    const opciones = buildCampanaOptions(opps, ctx, new Set<string>());
+    assert.deepEqual(
+      opciones.map((o) => o.value),
+      ["Campo X", "Campo Y", "Meta Campaña 1", NO_PAUTA]
+    );
   }
 
   console.log("verify-panel-filters: all assertions passed");
