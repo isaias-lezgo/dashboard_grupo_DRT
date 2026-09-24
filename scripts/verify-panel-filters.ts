@@ -1,5 +1,5 @@
-// Verification for lib/panel-filters.ts — los cinco filtros globales de la
-// barra (desarrollo, asesor, origen, canal, campaña).
+// Verification for lib/panel-filters.ts — los seis filtros globales de la
+// barra (desarrollo, asesor, origen, canal, campaña, agencia).
 //
 // Un filtro silenciosamente mal se ve igual que uno bien: números más chicos.
 // Por eso estas aserciones existen y por eso el módulo es puro y sin React.
@@ -23,6 +23,12 @@ import {
   resolveCampanas,
   type PanelFilters,
 } from "../lib/panel-filters";
+import {
+  buildAgenciaOptions,
+  detectAgencia,
+  NO_AGENCIA,
+  resolveAgencias,
+} from "../lib/agencia";
 
 const CANADAS = "id-canadas";
 const ATRIA = "id-atria";
@@ -372,6 +378,71 @@ function main() {
     assert.deepEqual(
       opciones.map((o) => o.value),
       ["Campo X", "Campo Y", "Meta Campaña 1", NO_PAUTA]
+    );
+  }
+
+  // Agencia: la nomenclatura "CAN-DOM-WSP-C3" y el nombre completo en los
+  // nombres viejos. Cadena Pauta → última atribución → source.
+  {
+    assert.equal(detectAgencia("CAN-DOM-WSP-C3"), "Domus");
+    assert.equal(detectAgencia("SAG-GEN-WSP-C1-A2"), "Genicrea");
+    assert.equal(detectAgencia("pal-inh-wsp-c1"), "Inhouse", "sin importar mayúsculas");
+    assert.equal(detectAgencia("ATR - DOM - FORM - C2"), "Domus", "separadores con espacios");
+    assert.equal(detectAgencia("CAÑADA | Domus |  FORM 2 Jul"), "Domus");
+    assert.equal(detectAgencia("Form.Saggita - Inhouse"), "Inhouse");
+    assert.equal(detectAgencia("Campaña Inhouse"), "Inhouse");
+    assert.equal(detectAgencia("Campaña In House"), "Inhouse");
+    assert.equal(detectAgencia("FORMS | GEN | LA SIERRA"), null, "GEN suelto sin desarrollo delante no cuenta");
+    assert.equal(detectAgencia("Domusa Residencial"), null, "palabra completa, no prefijo");
+    assert.equal(detectAgencia("Cañadas by El Mirador"), null);
+    assert.equal(detectAgencia(undefined), null);
+
+    const porPauta = opp({});
+    const dosPautas = opp({});
+    const porAtribucion = { ...opp({}), attributions: [
+      { isFirst: true, utmCampaign: "CAN-GEN-FORM-C1" },
+      { isLast: true, utmCampaign: "SIE-INH-FORM-C1" },
+    ] };
+    const porAdName = { ...opp({}), attributions: [{ isLast: true, adName: "ZAN-DOM-WSP-C1-A3" }] };
+    const porSource = { ...opp({}), source: "Campaña Inhouse" };
+    const nada = { ...opp({}), source: "facebook" };
+    // La Pauta gana a la atribución y al source.
+    const pautaGana = { ...opp({}), source: "Campaña Inhouse" };
+    const pautas: Pauta[] = [
+      { id: "pa1", contactId: porPauta.contactId, nombrePauta: "CAÑADA | Domus |  FORM", createdAt: "" } as Pauta,
+      { id: "pa2", contactId: dosPautas.contactId, nombrePauta: "Form. Cañadas - Inhouse", createdAt: "" } as Pauta,
+      { id: "pa3", contactId: dosPautas.contactId, nombrePauta: "CAN-DOM-FORM-C1", createdAt: "" } as Pauta,
+      { id: "pa4", contactId: pautaGana.contactId, nombrePauta: "SAG-GEN-WSP-C1", createdAt: "" } as Pauta,
+      { id: "pa5", contactId: nada.contactId, nombrePauta: "Cañadas by El Mirador", createdAt: "" } as Pauta,
+    ];
+    const byContact = buildPautaNamesByContact(pautas);
+
+    assert.deepEqual(resolveAgencias(porPauta, byContact), { names: ["Domus"], source: "pauta" });
+    assert.deepEqual(resolveAgencias(dosPautas, byContact), { names: ["Domus", "Inhouse"], source: "pauta" }, "dos Pautas, dos agencias");
+    assert.deepEqual(resolveAgencias(porAtribucion, byContact), { names: ["Inhouse"], source: "atribucion" }, "la ÚLTIMA atribución, no la primera");
+    assert.deepEqual(resolveAgencias(porAdName, byContact), { names: ["Domus"], source: "atribucion" });
+    assert.deepEqual(resolveAgencias(porSource, byContact), { names: ["Inhouse"], source: "source" });
+    assert.deepEqual(resolveAgencias(pautaGana, byContact), { names: ["Genicrea"], source: "pauta" });
+    assert.deepEqual(resolveAgencias(nada, byContact), { names: [NO_AGENCIA], source: "none" }, "una Pauta sin código no nombra agencia");
+
+    const opps = [porPauta, dosPautas, porAtribucion, porAdName, porSource, nada, pautaGana];
+    const ctx = { pautaNamesByContact: byContact };
+    const ids = (xs: Opportunity[]) => xs.map((x) => x.id);
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ agencias: ["Domus"] }), PIPELINES, undefined, ctx)),
+      ids([porPauta, dosPautas, porAdName])
+    );
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ agencias: [NO_AGENCIA] }), PIPELINES, undefined, ctx)),
+      ids([nada]),
+      "la cubeta vacía es seleccionable"
+    );
+    assert.equal(activeFilterCount(filters({ agencias: ["Domus", "Inhouse"] })), 2);
+
+    // Las tres siempre, en orden fijo, aunque estén en cero; "Sin agencia" al final.
+    assert.deepEqual(
+      buildAgenciaOptions([nada], byContact).map((o) => [o.value, o.count]),
+      [["Domus", 0], ["Genicrea", 0], ["Inhouse", 0], [NO_AGENCIA, 1]]
     );
   }
 

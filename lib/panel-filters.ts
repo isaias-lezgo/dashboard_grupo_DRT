@@ -1,5 +1,5 @@
-// Los cinco filtros globales de la barra: desarrollo, asesor, origen, canal y
-// campaña (nombre de Pauta).
+// Los seis filtros globales de la barra: desarrollo, asesor, origen, canal,
+// campaña (nombre de Pauta) y agencia (ver lib/agencia.ts).
 //
 // Son del mismo tipo que el filtro de fechas — cambian de qué oportunidades
 // habla el panel entero, no cómo dibuja un gráfico. Por eso se aplican en
@@ -15,8 +15,9 @@ import { NO_DESARROLLO, desarrolloOf } from "./panel-scope"
 import { matchesCategory } from "./category-filter"
 import { SIN_NOMBRE_CAMPAIGN, pautaNameFromCustomFields } from "./pauta"
 import { oppAdId } from "./meta-attribution"
+import { resolveAgencias } from "./agencia"
 
-/** Estado de los cinco menús. Arreglo vacío = ese menú no filtra nada. */
+/** Estado de los seis menús. Arreglo vacío = ese menú no filtra nada. */
 export interface PanelFilters {
   /** Desarrollos seleccionados; NO_DESARROLLO alcanza a los que no resuelven. */
   desarrollos: string[]
@@ -28,6 +29,8 @@ export interface PanelFilters {
   canal: string[]
   /** Nombres de Pauta; NO_PAUTA alcanza a los contactos sin ningún registro Pauta. */
   campanas: string[]
+  /** Agencias (AGENCIAS); NO_AGENCIA alcanza a las que ninguna fuente nombra. */
+  agencias: string[]
 }
 
 export const EMPTY_PANEL_FILTERS: PanelFilters = {
@@ -36,6 +39,7 @@ export const EMPTY_PANEL_FILTERS: PanelFilters = {
   origen: [],
   canal: [],
   campanas: [],
+  agencias: [],
 }
 
 /** Cubeta centinela del asesor: la oportunidad que nadie tiene asignada. */
@@ -230,7 +234,7 @@ export function applyPanelFilters(
   pipelines?: Pipeline[],
   /** Origen y canal viven en el CONTACTO en esta cuenta — ver categoryValuesOf. */
   contactById?: Map<string, Contact>,
-  /** Lookups de la campaña — ver resolveCampanas. */
+  /** Lookups de la campaña (y de la agencia, que usa sus Pautas) — ver resolveCampanas. */
   campanaCtx?: CampanaContext
 ): Opportunity[] {
   const byDesarrollo = filters.desarrollos.length > 0
@@ -238,9 +242,10 @@ export function applyPanelFilters(
   const byOrigen = filters.origen.length > 0
   const byCanal = filters.canal.length > 0
   const byCampana = filters.campanas.length > 0
+  const byAgencia = filters.agencias.length > 0
   // Misma referencia cuando no hay nada que filtrar: una copia nueva
   // invalidaría los memos aguas abajo.
-  if (!byDesarrollo && !byAsesor && !byOrigen && !byCanal && !byCampana) return opps
+  if (!byDesarrollo && !byAsesor && !byOrigen && !byCanal && !byCampana && !byAgencia) return opps
 
   const desarrollos = new Set(filters.desarrollos)
   const asesores = new Set(filters.asesores)
@@ -248,6 +253,7 @@ export function applyPanelFilters(
   const origen = new Set(filters.origen)
   const canal = new Set(filters.canal)
   const campanas = new Set(filters.campanas)
+  const agencias = new Set(filters.agencias)
   // Sin contexto, ninguna fuente responde: todo cae en NO_PAUTA salvo el campo
   // de la propia oportunidad. Inventar una campaña sería peor.
   const ctx: CampanaContext = campanaCtx ?? { pautaNamesByContact: new Map() }
@@ -258,6 +264,11 @@ export function applyPanelFilters(
     if (byOrigen && !matchesCategory(o, "origen", origen, contactById)) return false
     if (byCanal && !matchesCategory(o, "canal", canal, contactById)) return false
     if (byCampana && !campanasOf(o, ctx).some((n) => campanas.has(n))) return false
+    if (
+      byAgencia &&
+      !resolveAgencias(o, ctx.pautaNamesByContact, contactById).names.some((n) => agencias.has(n))
+    )
+      return false
     return true
   })
 }
@@ -269,7 +280,8 @@ export function activeFilterCount(filters: PanelFilters): number {
     filters.asesores.length +
     filters.origen.length +
     filters.canal.length +
-    filters.campanas.length
+    filters.campanas.length +
+    filters.agencias.length
   )
 }
 

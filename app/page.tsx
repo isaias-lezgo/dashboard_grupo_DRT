@@ -40,6 +40,7 @@ import {
 } from "@/lib/panel-filters"
 import { buildPautaNamesByContact } from "@/lib/pauta-performance"
 import { buildMetaCampaignByAd } from "@/lib/meta-attribution"
+import { buildAgenciaOptions } from "@/lib/agencia"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ConversationsChat } from "@/components/dashboard/conversations-chat"
@@ -51,6 +52,7 @@ import { useConversationsData } from "@/hooks/use-conversations-data"
 import { useConversationActivity } from "@/hooks/use-conversation-activity"
 import {
   Flag,
+  Briefcase,
   Building2,
   LayoutGrid,
   MapPin,
@@ -325,6 +327,15 @@ export default function DashboardPage() {
     }))
   }, [activeTab, data?.pipelines, data?.pautas, categoryBase, campanaCtx, panelFilters.campanas])
 
+  // Agencia: misma base que campaña. Las tres agencias se listan siempre, aunque
+  // estén en cero — ver buildAgenciaOptions.
+  const agenciaOptions = useMemo((): MultiSelectOption[] => {
+    if (activeTab === "conversations") return []
+    return buildAgenciaOptions(categoryBase, campanaCtx.pautaNamesByContact, contactById).map(
+      (o) => ({ value: o.value, label: o.value, count: o.count, muted: o.muted })
+    )
+  }, [activeTab, categoryBase, campanaCtx, contactById])
+
   // Human label of the active date filter, for the PDF report cover.
   const periodLabel = useMemo(() => {
     const base = (() => {
@@ -358,6 +369,7 @@ export default function DashboardPage() {
     if (panelFilters.origen.length) parts.push(`Origen: ${list(panelFilters.origen)}`)
     if (panelFilters.canal.length) parts.push(`Canal: ${list(panelFilters.canal)}`)
     if (panelFilters.campanas.length) parts.push(`Campaña: ${panelFilters.campanas.join(", ")}`)
+    if (panelFilters.agencias.length) parts.push(`Agencia: ${panelFilters.agencias.join(", ")}`)
     return parts.join(" · ")
   }, [dateFilter.preset, dateRange, panelFilters, asesorOptions])
 
@@ -646,6 +658,14 @@ export default function DashboardPage() {
                 onChange={(campanas) => setPanelFilters((f) => ({ ...f, campanas }))}
                 emptyMessage="Sin Pautas en este periodo"
                 searchable
+              />
+              <MultiSelectFilter
+                label="Agencia"
+                icon={Briefcase}
+                options={agenciaOptions}
+                selected={panelFilters.agencias}
+                onChange={(agencias) => setPanelFilters((f) => ({ ...f, agencias }))}
+                emptyMessage="Sin oportunidades en este periodo"
               />
               <ActiveFiltersPill
                 count={activeFilterCount(panelFilters)}

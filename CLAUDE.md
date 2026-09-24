@@ -93,7 +93,7 @@ pnpm verify:lost-cross   # lib/lost-cross-matrix.ts — cruce perdidas servicio/
 pnpm verify:advisors     # lib/advisor-breakdown.ts — matriz asesor × etapa + cubetas de estatus
 pnpm verify:assignment   # lib/assignment-funnel.ts — universo sin-asesor vs. denominador del mes
 pnpm verify:desarrollo-funnel # lib/desarrollo-funnel.ts — recuentos por desarrollo + embudo de 6 pasos (cita = unión)
-pnpm verify:filters      # lib/panel-filters.ts — filtros globales (desarrollo, asesor, origen, canal, campaña)
+pnpm verify:filters      # lib/panel-filters.ts + lib/agencia.ts — filtros globales (desarrollo, asesor, origen, canal, campaña, agencia)
 pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/canal SIN agrupar grafías
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
 pnpm verify:stale-matrix # lib/stale-opportunity-matrix.ts — cubetas de abandono en ambos ejes
@@ -673,7 +673,8 @@ bug class these modules were extracted to kill.
 | `lib/source-platform.ts` | "Origen de lead" platform bucketing + `PLATFORM_COLORS` / `PLATFORM_ORDER` |
 | `lib/csv.ts` | CSV cell escaping (`csvCell`, `buildCsv`) |
 | `lib/panel-scope.ts` | which pipeline each panel means, and the desarrollo dimension read from it |
-| `lib/panel-filters.ts` | los cinco filtros globales de la barra (desarrollo, asesor, origen, canal, campaña) |
+| `lib/panel-filters.ts` | los seis filtros globales de la barra (desarrollo, asesor, origen, canal, campaña, agencia) |
+| `lib/agencia.ts` | la agencia que opera la pauta (Domus / Genicrea / Inhouse): nomenclatura `CAN-DOM-WSP-C3` o nombre completo, cadena Pauta → última atribución → `source` |
 | `lib/category-filter.ts` | las opciones de los menús de Origen/Canal — la contraparte **sin agrupar** de `opportunity-breakdown.ts`; no los fusiones (ver abajo) |
 | `lib/sales-pivot.ts` | la agregación del pivote de ventas — **sin montar** en DRT (ver "Charts deliberately absent") |
 | `lib/sales-series.ts` | la agregación de las barras apiladas; `include` / `monthOf` / `measure` la abren a universos que no son "ganadas × mes de cierre × dinero" **sin duplicar** el orden de series ni el plegado de "Otros" |
@@ -761,9 +762,9 @@ skill**.
   charts excluded:
   `data.opportunities` → `applyPanelFilters` → `scopedOpportunities`
   → `filterByDateRange` → `opportunities`.
-  **`lib/panel-filters.ts`** owns five menus: **Desarrollo**, **Asesor**, **Origen de lead**,
-  **Canal de contacto** y **Campaña** (`multi-select-filter.tsx`, one generic component
-  mounted five times). Notes worth keeping:
+  **`lib/panel-filters.ts`** owns six menus: **Desarrollo**, **Asesor**, **Origen de lead**,
+  **Canal de contacto**, **Campaña** y **Agencia** (`multi-select-filter.tsx`, one generic
+  component mounted six times). Notes worth keeping:
   - **Empty selection = no filter.** Do not "fix" this into an all-selected neutral state:
     with that convention a development newly added in the CRM would silently sit outside a
     filter the user believes is off.
@@ -810,7 +811,20 @@ skill**.
     that desarrollo; Meta and field names come from the opp itself and always list. Counts
     use the same unscoped context as the filter, so the number beside an option is exactly
     what remains after ticking it — `buildCampanaOptions(opps, ctx, allowed)`.
-  - Sus opciones (origen, canal y campaña) se acotan al pipeline de la pestaña activa y al
+  - **Agencia** (added 2026-09-23, `lib/agencia.ts`): Domus / Genicrea / Inhouse, from
+    marketing's naming convention V1 (`CAN-DOM-WSP-C3-A7` = desarrollo · **agencia** · tipo ·
+    campaña · anuncio; DOM/GEN/INH). The code only counts **right after a desarrollo code**
+    (a bare "GEN" appears in free text); the full agency name also counts anywhere, because
+    the convention barely exists in the data yet. Chain, each level only if the previous
+    named nothing: **1. the contact's Pauta names** (two agencies possible, like Campaña) →
+    **2. the LAST attribution** (`isLast`: `utmCampaign`, then `adName`) → **3. `opp.source`**
+    ("Campaña Inhouse") → `Sin agencia`. Measured 2026-09-23 over 14,671: Domus 729 (632
+    Pauta "CAÑADA | Domus | FORM…", **95 from source "Prueba Domus AI"** — manual May-June
+    records, confirm with the client that they are Domus), Inhouse 192 (166 by source),
+    Genicrea 0, only **1** opportunity in the new format. The three agencies are always
+    listed, even at zero. No Meta level: the convention names the Meta campaign, so when
+    campaigns get renamed, level 2 catches it on new leads.
+  - Sus opciones (origen, canal, campaña y agencia) se acotan al pipeline de la pestaña activa y al
     rango de fechas; las de desarrollo y asesor no. Divergencia conocida, documentada en el spec del filtro.
   - They filter **opportunities only** — contacts carry no desarrollo of their own.
   - The AI assistant is exempt, same as the date filter.
