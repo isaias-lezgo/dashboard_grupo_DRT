@@ -573,7 +573,17 @@ export type GHLConversationSearchDoc = Omit<GHLConversation, "lastMessageDate"> 
   /** Dirección del ÚLTIMO mensaje. Cuando es "outbound", lastMessageDate ES la fecha del último saliente. */
   lastMessageDirection?: "inbound" | "outbound";
   lastManualMessageDate?: string | number;
+  /**
+   * OJO: su AUSENCIA no prueba que no haya salientes — medido 2026-09-28, 18
+   * de 25 conversaciones sin este campo sí tenían salientes, varias WhatsApp.
+   */
   lastOutboundMessageAction?: string;
+  /**
+   * Las oportunidades del contacto, embebidas en el documento. Verificado
+   * contra la sub-cuenta real; falta en ~13 % de los documentos (no es un
+   * arreglo), y ahí no se puede concluir nada.
+   */
+  opportunities?: Array<{ id: string; pipelineId?: string; status?: string }>;
   /** Cursor de la API: sort[0] es lastMessageDate en epoch ms. */
   sort?: Array<number | string>;
 };

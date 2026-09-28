@@ -20,7 +20,8 @@ export async function fetchStream<T>(
   onProgress: (message: string) => void,
   signal: AbortSignal,
   onLocation?: (name: string) => void,
-  onStep?: (step: StreamStep) => void
+  onStep?: (step: StreamStep) => void,
+  onTick?: (tick: Record<string, unknown>) => void
 ): Promise<T> {
   const res = await fetch(url, { signal });
   if (!res.ok || !res.body) {
@@ -42,22 +43,30 @@ export async function fetchStream<T>(
 
     for (const line of lines) {
       if (!line.trim()) continue;
+      // Solo el PARSEO va en try: antes el `throw` del frame `error` caía en
+      // este mismo catch, se descartaba como "línea malformada" y el mensaje
+      // real del servidor se perdía detrás de "No data received".
+      let msg;
       try {
-        const msg = JSON.parse(line);
+        msg = JSON.parse(line);
+      } catch {
+        continue; // skip malformed lines
+      }
+      {
         if (msg.type === "progress") {
           onProgress(msg.message);
         } else if (msg.type === "location") {
           onLocation?.(msg.name);
         } else if (msg.type === "step") {
           onStep?.({ key: msg.key, status: msg.status, count: msg.count });
+        } else if (msg.type === "tick") {
+          onTick?.(msg);
         } else if (msg.type === "data") {
           const { type: _t, ...rest } = msg;
           data = rest as T;
         } else if (msg.type === "error") {
           throw new Error(msg.message || "Stream error");
         }
-      } catch {
-        // skip malformed lines
       }
     }
   }

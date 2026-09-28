@@ -414,8 +414,22 @@ reintroduce a `sucursalField`-style seam here.
     un contacto ahí no prueba silencio, solo que no entró en la muestra. Sale de
     `app/api/conversation-activity`, que recorre `/conversations/search` por cursor hasta
     `STALE_HORIZON_DAYS` y solo abre el hilo de las conversaciones que terminan en
-    entrante — el resto ya tiene su fecha en `lastMessageDate`. Medido: 3 200
-    conversaciones recorridas, 600 hilos abiertos, ~85 s.
+    entrante — el resto ya tiene su fecha en `lastMessageDate`. **Y solo si el
+    contacto tiene una oportunidad `open`** (`needsThread`: el documento de
+    búsqueda trae `opportunities[]` embebidas; si falta, se abre). Medido
+    2026-09-28: 60 días = ~7 700 conversaciones (78 páginas), ~3 200 sin saliente
+    al final (64 % vacías `TYPE_NO_SHOW`, casi todas de la carga CSV) y **~740
+    hilos tras el filtro**, ~2.5 min. Sin el filtro eran ~13 min y la función
+    moría en el techo de 300 s de Vercel — esa era la tarjeta en "No se pudo
+    cargar". La ruta tiene `maxDuration = 300` y un presupuesto de 250 s: al
+    agotarlo entrega lo que tiene con `scanIncomplete` / `threadsUnopened`, y la
+    tarjeta lo dice en una nota ámbar. **`lastOutboundMessageAction` ausente NO
+    prueba que no haya salientes** (18 de 25 sí tenían); no lo uses de atajo.
+  - **La carga arranca cuando terminó la del panel** (`enabled` en
+    `useConversationActivity`): juntas, dos funciones con limitadores
+    independientes rebasan el presupuesto de GHL de la sub-cuenta y se ahogan en
+    429. La tarjeta muestra el paso, el %, el tiempo transcurrido y el estimado
+    restante con frames `tick` de la ruta; un fallo se reintenta solo una vez.
   - **`/conversations/search` devuelve `lastMessageDate` como epoch en MILISEGUNDOS**, no
     como el ISO que declara el tipo y que usa el resto de la API. La ruta lo normaliza con
     `toIso()` en la frontera. No lo quites: río abajo se hace `new Date(valor)`, que con un

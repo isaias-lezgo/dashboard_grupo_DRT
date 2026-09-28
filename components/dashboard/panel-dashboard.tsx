@@ -11,7 +11,11 @@ import type {
   Message,
 } from "@/lib/types"
 import type { ResolvedDateRange } from "@/lib/date-range"
-import type { ActivityStatus } from "@/hooks/use-conversation-activity"
+import type {
+  ActivityMeta,
+  ActivityProgress,
+  ActivityStatus,
+} from "@/hooks/use-conversation-activity"
 import type { PanelId } from "@/lib/panel-scope"
 import { DashboardShell } from "./dashboard-ui"
 import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-chart"
@@ -72,6 +76,9 @@ export interface PanelDashboardProps {
   conversationActivity?: Map<string, string | null>
   /** El mapa vacío NO significa "nadie escribió": hasta "ready" no se pinta la matriz. */
   activityStatus?: ActivityStatus
+  activityProgress?: ActivityProgress
+  activityMeta?: ActivityMeta | null
+  activityError?: string | null
   onRetryActivity?: () => void
   calls?: Call[]
   messages?: Message[]
@@ -105,6 +112,9 @@ export function PanelDashboard({
   unfilteredOpportunities = [],
   conversationActivity,
   activityStatus = "loading",
+  activityProgress,
+  activityMeta,
+  activityError,
   onRetryActivity,
   calls = [],
   allPautas = [],
@@ -177,6 +187,9 @@ export function PanelDashboard({
             {...shared}
             conversationActivity={conversationActivity}
             activityStatus={activityStatus}
+            activityProgress={activityProgress}
+            activityMeta={activityMeta}
+            activityError={activityError}
             onRetryActivity={onRetryActivity}
           />
           <TaskBacklogChart

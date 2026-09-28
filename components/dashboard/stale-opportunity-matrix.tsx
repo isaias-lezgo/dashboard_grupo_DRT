@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { AlarmClock, RotateCw } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { motion } from "framer-motion"
+import { AlarmClock, AlertTriangle, Check, RotateCw } from "lucide-react"
 import type {
   Appointment,
   Call,
@@ -16,10 +17,16 @@ import {
   buildStaleMatrix,
   CRITICAL_FROM_INDEX,
   STALE_BUCKETS,
+  STALE_HORIZON_DAYS,
   type StaleCell,
 } from "@/lib/stale-opportunity-matrix"
 import { PANEL_SCOPES, scopeOpportunities, type PanelId } from "@/lib/panel-scope"
-import type { ActivityStatus } from "@/hooks/use-conversation-activity"
+import {
+  activityFraction,
+  type ActivityMeta,
+  type ActivityProgress,
+  type ActivityStatus,
+} from "@/hooks/use-conversation-activity"
 import { cn } from "@/lib/utils"
 import {
   ChartCardContent,
@@ -58,6 +65,9 @@ export interface StaleOpportunityMatrixProps {
   allOpportunities: Opportunity[]
   conversationActivity?: Map<string, string | null>
   activityStatus?: ActivityStatus
+  activityProgress?: ActivityProgress
+  activityMeta?: ActivityMeta | null
+  activityError?: string | null
   onRetryActivity?: () => void
   contacts: Contact[]
   allContacts: Contact[]
@@ -87,6 +97,9 @@ export function StaleOpportunityMatrix({
   allOpportunities,
   conversationActivity,
   activityStatus = "loading",
+  activityProgress,
+  activityMeta,
+  activityError,
   onRetryActivity,
   contacts,
   allContacts,
@@ -158,10 +171,7 @@ export function StaleOpportunityMatrix({
       />
       <ChartCardContent>
         {activityStatus === "loading" ? (
-          <div className="flex h-[240px] flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-            Cargando actividad de conversaciones…
-          </div>
+          <ActivityLoading progress={activityProgress} />
         ) : activityStatus === "error" || !matrix ? (
           // Nunca ceros y nunca una matriz parcial: sin el dato de mensajes, la
           // matriz entera se iría a la columna "+60 d" y acusaría un abandono
@@ -171,6 +181,11 @@ export function StaleOpportunityMatrix({
               No se pudo cargar la actividad de conversaciones, y sin ella esta matriz
               reportaría que ningún lead ha sido contactado. Por eso no se muestra.
             </p>
+            {activityError && (
+              <p className="max-w-sm text-[11px] text-muted-foreground/80">
+                Detalle: {activityError}
+              </p>
+            )}
             {onRetryActivity && (
               <button
                 type="button"
@@ -186,6 +201,7 @@ export function StaleOpportunityMatrix({
           <ChartEmpty message="Sin oportunidades abiertas en este embudo" />
         ) : (
           <>
+            <ActivityGapNote meta={activityMeta} />
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span
@@ -348,5 +364,171 @@ export function StaleOpportunityMatrix({
         locationId={locationId}
       />
     </DashboardCard>
+  )
+}
+
+function formatDuration(ms: number): string {
+  const secs = Math.max(0, Math.round(ms / 1000))
+  if (secs < 60) return `${secs} s`
+  const m = Math.floor(secs / 60)
+  const r = secs % 60
+  return r === 0 ? `${m} min` : `${m} min ${r} s`
+}
+
+/**
+ * La carga tarda del orden de minuto y medio, así que un spinner mudo leía
+ * como app trabada. Esto dice en qué paso va, cuánto lleva y cuánto falta.
+ *
+ * La barra es determinada solo cuando hay con qué: en `waiting`, `connecting`
+ * y `retry` no sabemos cuánto falta y se pinta indeterminada — un porcentaje
+ * clavado en 0 es peor que ninguno. El estimado de tiempo sale del ritmo real
+ * del intento actual y no aparece hasta tener un 5 % y 5 s de muestra.
+ */
+function ActivityLoading({ progress }: { progress?: ActivityProgress }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const p = progress ?? {
+    phase: "waiting" as const,
+    scanned: 0,
+    horizonPct: 0,
+    done: 0,
+    total: 0,
+    startedAt: 0,
+  }
+  const determinate = p.phase === "scan" || p.phase === "threads"
+  const fraction = activityFraction(p)
+  const elapsed = p.startedAt > 0 ? now - p.startedAt : 0
+  const eta =
+    determinate && fraction >= 0.05 && elapsed >= 5000
+      ? (elapsed * (1 - fraction)) / fraction
+      : null
+
+  const headline =
+    p.phase === "waiting"
+      ? "Esperando a que termine la carga principal…"
+      : p.phase === "connecting"
+        ? "Conectando con las conversaciones…"
+        : p.phase === "retry"
+          ? "El primer intento no terminó — reintentando en unos segundos…"
+          : p.phase === "scan"
+            ? `Revisando conversaciones de los últimos ${STALE_HORIZON_DAYS} días…`
+            : "Buscando el último mensaje enviado en conversaciones sin respuesta…"
+
+  const scanDays = Math.round(p.horizonPct * STALE_HORIZON_DAYS)
+  const steps: Array<{ label: string; detail: string; state: "done" | "active" | "todo" }> = [
+    {
+      label: "Carga principal del panel",
+      detail: p.phase === "waiting" ? "en curso" : "lista",
+      state: p.phase === "waiting" ? "active" : "done",
+    },
+    {
+      label: "Recorrer conversaciones",
+      detail:
+        p.phase === "threads"
+          ? `${n(p.scanned)} revisadas`
+          : p.phase === "scan"
+            ? `${n(p.scanned)} revisadas · ${scanDays} de ${STALE_HORIZON_DAYS} días`
+            : "",
+      state: p.phase === "threads" ? "done" : p.phase === "scan" ? "active" : "todo",
+    },
+    {
+      label: "Abrir hilos sin respuesta",
+      detail: p.phase === "threads" ? `${n(p.done)} de ${n(p.total)}` : "",
+      state: p.phase === "threads" ? "active" : "todo",
+    },
+  ]
+
+  return (
+    <div
+      className="flex min-h-[240px] flex-col items-center justify-center gap-4 px-4 py-6 text-xs"
+      role="status"
+      aria-live="polite"
+    >
+      <p className="text-center font-medium text-foreground">{headline}</p>
+
+      <div className="w-full max-w-md space-y-1.5">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+          {determinate ? (
+            <motion.div
+              className="h-full rounded-full bg-primary"
+              initial={false}
+              animate={{ width: `${Math.max(2, fraction * 100)}%` }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            />
+          ) : (
+            <motion.div
+              className="h-full w-1/3 rounded-full bg-primary/70"
+              animate={{ x: ["-100%", "300%"] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+            />
+          )}
+        </div>
+        <div className="flex items-center justify-between tabular-nums text-muted-foreground">
+          <span>{determinate ? `${Math.round(fraction * 100)} %` : "\u00a0"}</span>
+          <span>
+            {elapsed > 0 && `${formatDuration(elapsed)} transcurridos`}
+            {eta !== null &&
+              ` · ${eta < 10_000 ? "casi listo" : `faltan ~${formatDuration(eta)}`}`}
+          </span>
+        </div>
+      </div>
+
+      <ol className="w-full max-w-md space-y-1">
+        {steps.map((step, i) => (
+          <li key={step.label} className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-semibold",
+                step.state === "done" && "border-primary bg-primary text-primary-foreground",
+                step.state === "active" && "border-primary text-primary",
+                step.state === "todo" && "border-border text-muted-foreground"
+              )}
+              aria-hidden
+            >
+              {step.state === "done" ? <Check className="h-2.5 w-2.5" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                step.state === "todo" ? "text-muted-foreground" : "text-foreground",
+                step.state === "active" && "font-medium"
+              )}
+            >
+              {step.label}
+            </span>
+            {step.detail && (
+              <span className="ml-auto tabular-nums text-muted-foreground">{step.detail}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/**
+ * La matriz sí se pinta con un recorrido incompleto (perderlo todo sería peor),
+ * pero los contactos que no se alcanzaron caen en "+60 d" sin evidencia. Eso
+ * se dice aquí en vez de dejar que el cuadrante crítico lo absorba en silencio.
+ */
+function ActivityGapNote({ meta }: { meta?: ActivityMeta | null }) {
+  if (!meta) return null
+  const failed = (meta.threadsFailed ?? 0) + (meta.threadsUnopened ?? 0)
+  if (!meta.scanIncomplete && failed === 0) return null
+  return (
+    <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
+      <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" aria-hidden />
+      <p>
+        {meta.scanIncomplete &&
+          `El recorrido de conversaciones se cortó a los ${meta.scannedDays ?? "?"} de ${meta.horizonDays} días. `}
+        {failed > 0 &&
+          `${n(failed)} ${failed === 1 ? "conversación no se pudo revisar" : "conversaciones no se pudieron revisar"} a tiempo. `}
+        Esos contactos pueden aparecer en &ldquo;+60 d&rdquo; sin merecerlo; reintenta
+        más tarde para una lectura completa.
+      </p>
+    </div>
   )
 }
