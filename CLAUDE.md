@@ -97,6 +97,7 @@ pnpm verify:filters      # lib/panel-filters.ts + lib/agencia.ts — filtros glo
 pnpm verify:category-filter # lib/category-filter.ts — opciones de origen/canal SIN agrupar grafías
 pnpm verify:task-backlog # lib/task-backlog.ts — cubetas de vencimiento por zona horaria
 pnpm verify:stale-matrix # lib/stale-opportunity-matrix.ts — cubetas de abandono en ambos ejes
+pnpm verify:activity-cache # lib/activity-cache.ts — completa vs. incremental, fusión de últimos salientes
 pnpm verify:sync-store   # lib/sync-store.ts — gzip roundtrip, aislamiento por cliente, el candado
 pnpm verify:meta-oauth   # lib/meta-oauth.ts — state firmado, cifrado del token, URL del diálogo
 pnpm verify:meta-connection-store # lib/meta-connection-store.ts — fila por (cliente, producto); usa la base si hay DATABASE_URL
@@ -419,12 +420,27 @@ reintroduce a `sucursalField`-style seam here.
     búsqueda trae `opportunities[]` embebidas; si falta, se abre). Medido
     2026-09-28: 60 días = ~7 700 conversaciones (78 páginas), ~3 200 sin saliente
     al final (64 % vacías `TYPE_NO_SHOW`, casi todas de la carga CSV) y **~740
-    hilos tras el filtro**, ~2.5 min. Sin el filtro eran ~13 min y la función
+    hilos tras el filtro**, ~3.5 min. Sin el filtro eran ~13 min y la función
     moría en el techo de 300 s de Vercel — esa era la tarjeta en "No se pudo
     cargar". La ruta tiene `maxDuration = 300` y un presupuesto de 250 s: al
     agotarlo entrega lo que tiene con `scanIncomplete` / `threadsUnopened`, y la
     tarjeta lo dice en una nota ámbar. **`lastOutboundMessageAction` ausente NO
     prueba que no haya salientes** (18 de 25 sí tenían); no lo uses de atajo.
+  - **El resultado se cachea en Neon** (slot `conversation-activity` de
+    `project_sync`, fila `<cliente>:conversation-activity` — sin migración). El
+    cálculo vive en `lib/conversation-activity.ts` (`computeActivity`, lo llaman la
+    ruta y el refresco de `after()`); lo puro — completa vs. incremental, fusión,
+    cola de hilos — en `lib/activity-cache.ts` (`pnpm verify:activity-cache`). Con
+    caché la tarjeta carga en ~1 s y, si pasó de 15 min, corre un refresco
+    **incremental**: solo conversaciones con mensajes posteriores al `watermark`
+    (−10 min de traslape) más los hilos que la corrida anterior dejó pendientes o
+    que fallaron. Hace una **completa** si no hay base, si la anterior no llegó al
+    horizonte, o si la última completa tiene 24 h (corrige oportunidades
+    reabiertas cuyo hilo se saltó). Fusión (también en la completa): por contacto
+    gana la fecha más reciente — el último saliente solo avanza, así que lo
+    guardado es una cota inferior real — y se poda lo que salió de los 60 días;
+    el caché no guarda historia.
+    "Reintentar" manda `?fresh=1`.
   - **La carga arranca cuando terminó la del panel** (`enabled` en
     `useConversationActivity`): juntas, dos funciones con limitadores
     independientes rebasan el presupuesto de GHL de la sub-cuenta y se ahogan en
@@ -528,8 +544,13 @@ a un par. La ruta lee una fila de `project_sync` con el payload ya armado, la ma
   es que el "Actualizado hace X" deja de avanzar.
 - El botón **Actualizar** manda `?fresh=1` (`refresh()` en `use-dashboard-data.ts` va en
   fresco por defecto); el montaje inicial no, que es el punto de todo esto.
-- **No caches las rutas de detalle** que se piden al abrir un drawer, ni
-  `/api/conversation-activity`. Van a GHL en vivo y ahí está bien.
+- **No caches las rutas de detalle** que se piden al abrir un drawer. Van a GHL
+  en vivo y ahí está bien. `/api/conversation-activity` **sí** se cachea desde
+  2026-09-28 (slot propio, ver "Oportunidades sin atención"): su corrida completa
+  tarda ~3.5 min y roza el techo de 300 s.
+- `lib/sync-store.ts` tiene **slots** (`SyncSlot`): `readSlot` / `writeSlot` /
+  `claimSlot` / `releaseSlot` con candado independiente por slot. `readSync` y
+  compañía son el slot `dashboard`, que conserva la llave de siempre (el id pelón).
 
 ### Meta Ads
 

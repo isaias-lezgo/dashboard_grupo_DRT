@@ -3,24 +3,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchStream } from "./fetch-stream";
 
+import type { ActivityMeta } from "@/lib/activity-cache";
+
+export type { ActivityMeta };
+
 interface ActivityPayload {
   activity: Array<{ contactId: string; lastOutboundAt: string | null }>;
   meta: ActivityMeta;
-}
-
-export interface ActivityMeta {
-  conversations: number;
-  threadsOpened: number;
-  /** Hilos que no abrieron: sus contactos caen en "+60 d" sin evidencia. */
-  threadsFailed?: number;
-  /** Hilos que no se alcanzaron a abrir por el presupuesto de tiempo. */
-  threadsUnopened?: number;
-  /** El recorrido se cortó antes del horizonte. */
-  scanIncomplete?: boolean;
-  /** Hasta cuántos días atrás llegó el recorrido. */
-  scannedDays?: number;
-  horizonDays: number;
-  fetchedAt: string;
+  /** true = salió del caché de Neon (sin frames de progreso). */
+  cached?: boolean;
 }
 
 /**
@@ -92,7 +83,7 @@ export function useConversationActivity({ enabled = true }: { enabled?: boolean 
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const started = useRef(false);
 
-  const load = useCallback(async (attempt = 0) => {
+  const load = useCallback(async (attempt = 0, fresh = false) => {
     abortRef.current?.abort();
     if (retryTimer.current) clearTimeout(retryTimer.current);
     const ctrl = new AbortController();
@@ -104,7 +95,9 @@ export function useConversationActivity({ enabled = true }: { enabled?: boolean 
 
     try {
       const result = await fetchStream<ActivityPayload>(
-        "/api/conversation-activity",
+        // ?fresh=1 salta el caché: es lo que pide "Reintentar" y el reintento
+        // automático, donde el caché ya no sirvió.
+        fresh ? "/api/conversation-activity?fresh=1" : "/api/conversation-activity",
         () => {},
         ctrl.signal,
         undefined,
@@ -129,7 +122,7 @@ export function useConversationActivity({ enabled = true }: { enabled?: boolean 
       // GHL, y pedirle al usuario que apriete un botón por eso es ruido.
       if (attempt === 0) {
         setProgress((prev) => ({ ...prev, phase: "retry" }));
-        retryTimer.current = setTimeout(() => load(1), AUTO_RETRY_DELAY_MS);
+        retryTimer.current = setTimeout(() => load(1, true), AUTO_RETRY_DELAY_MS);
         return;
       }
       setActivity(new Map());
@@ -154,7 +147,7 @@ export function useConversationActivity({ enabled = true }: { enabled?: boolean 
 
   const refresh = useCallback(() => {
     started.current = true;
-    load();
+    load(0, true);
   }, [load]);
 
   return { activity, status, progress, meta, errorMessage, refresh };

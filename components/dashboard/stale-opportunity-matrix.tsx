@@ -216,6 +216,14 @@ export function StaleOpportunityMatrix({
               </span>
               <span className="ml-auto tabular-nums">
                 {n(matrix.criticalCount)} de {n(matrix.grandTotal)} en el cuadrante crítico
+                {activityMeta?.fetchedAt && (
+                  <>
+                    {" · "}
+                    <span title="La actividad de conversaciones se guarda; al abrir el panel, si tiene más de 15 min, se actualiza en segundo plano y el dato nuevo aparece en la siguiente visita.">
+                      mensajes al {formatClock(activityMeta.fetchedAt)}
+                    </span>
+                  </>
+                )}
               </span>
             </div>
 
@@ -365,6 +373,19 @@ export function StaleOpportunityMatrix({
       />
     </DashboardCard>
   )
+}
+
+/** "hoy 14:05", "ayer 09:30" o "26 sep 18:00", en la hora de CDMX. */
+function formatClock(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  const tz = "America/Mexico_City"
+  const day = (x: Date) => x.toLocaleDateString("en-CA", { timeZone: tz })
+  const time = d.toLocaleTimeString("es-MX", { timeZone: tz, hour: "2-digit", minute: "2-digit" })
+  const now = new Date()
+  if (day(d) === day(now)) return `hoy ${time}`
+  if (day(d) === day(new Date(now.getTime() - 86_400_000))) return `ayer ${time}`
+  return `${d.toLocaleDateString("es-MX", { timeZone: tz, day: "numeric", month: "short" })} ${time}`
 }
 
 function formatDuration(ms: number): string {
@@ -526,8 +547,8 @@ function ActivityGapNote({ meta }: { meta?: ActivityMeta | null }) {
           `El recorrido de conversaciones se cortó a los ${meta.scannedDays ?? "?"} de ${meta.horizonDays} días. `}
         {failed > 0 &&
           `${n(failed)} ${failed === 1 ? "conversación no se pudo revisar" : "conversaciones no se pudieron revisar"} a tiempo. `}
-        Esos contactos pueden aparecer en &ldquo;+60 d&rdquo; sin merecerlo; reintenta
-        más tarde para una lectura completa.
+        Esos contactos pueden aparecer en &ldquo;+60 d&rdquo; sin merecerlo. Lo pendiente
+        se completa solo en la siguiente actualización automática.
       </p>
     </div>
   )

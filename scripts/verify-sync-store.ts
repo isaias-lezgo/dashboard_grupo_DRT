@@ -18,6 +18,10 @@ import {
   writeSync,
   claimSync,
   releaseSync,
+  readSlot,
+  writeSlot,
+  claimSlot,
+  releaseSlot,
 } from "../lib/sync-store";
 import type { ClientConfig } from "../lib/clients";
 import type { DashboardPayload } from "../lib/types";
@@ -125,6 +129,28 @@ async function main() {
   assert.ok(overwritten);
   assert.equal(overwritten.payload.members[0], "a2");
   assert.equal(overwritten.syncedAt, newer);
+
+  // --- slots: el caché de actividad y el del dashboard del MISMO cliente no se
+  // pisan, y el de A sigue invisible para B
+  const act = { activity: [{ contactId: "c1", lastOutboundAt: stamp }], marker: "act-a" };
+  await writeSlot(A, "conversation-activity", act, stamp);
+  const actA = await readSlot<typeof act>(A, "conversation-activity");
+  assert.ok(actA);
+  assert.deepEqual(actA.payload, act, "el slot de actividad sobrevive el gzip");
+  const dashA = await readSync(A);
+  assert.ok(dashA);
+  assert.equal(dashA.payload.members[0], "a2", "escribir actividad NO toca el dashboard");
+  assert.equal(
+    await readSlot(B, "conversation-activity"),
+    null,
+    "la actividad de A es invisible para B",
+  );
+  // El candado es por slot: refrescar actividad no bloquea el sync del panel.
+  assert.equal(await claimSlot(A, "conversation-activity"), true);
+  assert.equal(await claimSync(A), true, "el candado del dashboard es independiente");
+  assert.equal(await claimSlot(A, "conversation-activity"), false);
+  await releaseSlot(A, "conversation-activity");
+  await releaseSync(A);
 
   // --- limpieza, para que la tabla solo contenga clientes reales
   const { getSql } = await import("../lib/db");

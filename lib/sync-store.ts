@@ -36,11 +36,30 @@ export function isStale(syncedAt: string | Date, now: Date = new Date()): boolea
 // fila equivocada renderizaría el dashboard de A con datos de B — la misma clase
 // de fuga que lib/ghl-context.ts existe para evitar — así que la firma exige un
 // cliente ya resuelto por requireClient() para poder llamarlas siquiera.
-export async function readSync(
+
+/**
+ * Qué caché de ese cliente. `dashboard` es el payload del sync principal;
+ * `conversation-activity` es el mapa contacto → último saliente de la matriz
+ * "Oportunidades sin atención". Ambos son desechables y comparten la tabla: un
+ * slot nuevo no pide migración, solo otra fila.
+ *
+ * La llave se DERIVA del ClientConfig aquí adentro y el slot es un tipo cerrado,
+ * así que ningún llamador puede armar una llave que apunte a otro cliente.
+ */
+export type SyncSlot = "dashboard" | "conversation-activity";
+
+function rowKey(client: ClientConfig, slot: SyncSlot): string {
+  // La fila del dashboard conserva la llave de siempre (el id pelón) para no
+  // invalidar el caché que ya existe en producción.
+  return slot === "dashboard" ? client.id : `${client.id}:${slot}`;
+}
+
+export async function readSlot<T>(
   client: ClientConfig,
-): Promise<{ payload: DashboardPayload; syncedAt: string } | null> {
+  slot: SyncSlot,
+): Promise<{ payload: T; syncedAt: string } | null> {
   const rows = await getSql()`
-    SELECT payload, synced_at FROM project_sync WHERE project_id = ${client.id}
+    SELECT payload, synced_at FROM project_sync WHERE project_id = ${rowKey(client, slot)}
   `;
   if (rows.length === 0) return null;
   const gz = Buffer.from(rows[0].payload);
@@ -50,18 +69,22 @@ export async function readSync(
   if (gz.length === 0) return null;
   const raw = gunzipSync(gz);
   return {
-    payload: JSON.parse(raw.toString("utf8")) as DashboardPayload,
+    payload: JSON.parse(raw.toString("utf8")) as T,
     syncedAt: new Date(rows[0].synced_at).toISOString(),
   };
 }
 
-export async function writeSync(client: ClientConfig, payload: DashboardPayload): Promise<void> {
+/** `syncedAt` es cuándo se trajo el dato de la fuente, no cuándo se escribió. */
+export async function writeSlot(
+  client: ClientConfig,
+  slot: SyncSlot,
+  payload: unknown,
+  syncedAt: string,
+): Promise<void> {
   const gz = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"));
-  // synced_at sale del payload, no de now(): registra cuándo se trajo el dato de
-  // GHL, que es lo que significa "Actualizado hace X" en el header.
   await getSql()`
     INSERT INTO project_sync (project_id, payload, synced_at, sync_started_at, last_error)
-    VALUES (${client.id}, ${gz}, ${payload.meta.fetchedAt}, NULL, NULL)
+    VALUES (${rowKey(client, slot)}, ${gz}, ${syncedAt}, NULL, NULL)
     ON CONFLICT (project_id) DO UPDATE
        SET payload = EXCLUDED.payload,
            synced_at = EXCLUDED.synced_at,
@@ -70,17 +93,16 @@ export async function writeSync(client: ClientConfig, payload: DashboardPayload)
   `;
 }
 
-// Toma el candado del sync atómicamente. Devuelve false cuando alguien más lo
-// tiene, que es como dos personas abriendo el mismo panel viejo a la vez
-// producen UN sync.
+// Toma el candado atómicamente. Devuelve false cuando alguien más lo tiene, que
+// es como dos personas abriendo el mismo panel viejo a la vez producen UN sync.
 //
 // La decisión entera vive dentro del WHERE del UPDATE a propósito: hacerlo como
 // read-then-write en TypeScript dejaría una ventana donde ambos lo ven libre y
 // ambos proceden.
-export async function claimSync(client: ClientConfig): Promise<boolean> {
+export async function claimSlot(client: ClientConfig, slot: SyncSlot): Promise<boolean> {
   const rows = await getSql()`
     INSERT INTO project_sync (project_id, payload, synced_at, sync_started_at)
-    VALUES (${client.id}, ''::bytea, to_timestamp(0), now())
+    VALUES (${rowKey(client, slot)}, ''::bytea, to_timestamp(0), now())
     ON CONFLICT (project_id) DO UPDATE
        SET sync_started_at = now()
      WHERE project_sync.sync_started_at IS NULL
@@ -93,11 +115,37 @@ export async function claimSync(client: ClientConfig): Promise<boolean> {
 // Suelta el candado SIN tocar el payload: un refresco fallido debe dejar el
 // último caché bueno donde estaba. Un dashboard de hace una hora le gana a
 // ningún dashboard.
-export async function releaseSync(client: ClientConfig, error?: string): Promise<void> {
+export async function releaseSlot(
+  client: ClientConfig,
+  slot: SyncSlot,
+  error?: string,
+): Promise<void> {
   await getSql()`
     UPDATE project_sync
        SET sync_started_at = NULL,
            last_error = ${error ?? null}
-     WHERE project_id = ${client.id}
+     WHERE project_id = ${rowKey(client, slot)}
   `;
+}
+
+// --- El slot del dashboard, con las firmas de siempre.
+
+export function readSync(
+  client: ClientConfig,
+): Promise<{ payload: DashboardPayload; syncedAt: string } | null> {
+  return readSlot<DashboardPayload>(client, "dashboard");
+}
+
+export function writeSync(client: ClientConfig, payload: DashboardPayload): Promise<void> {
+  // synced_at sale del payload, no de now(): registra cuándo se trajo el dato de
+  // GHL, que es lo que significa "Actualizado hace X" en el header.
+  return writeSlot(client, "dashboard", payload, payload.meta.fetchedAt);
+}
+
+export function claimSync(client: ClientConfig): Promise<boolean> {
+  return claimSlot(client, "dashboard");
+}
+
+export function releaseSync(client: ClientConfig, error?: string): Promise<void> {
+  return releaseSlot(client, "dashboard", error);
 }
