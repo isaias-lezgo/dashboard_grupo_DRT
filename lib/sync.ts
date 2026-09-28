@@ -30,6 +30,7 @@ import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
 import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
 import { historyWindow } from "@/lib/meta-normalize";
 import { oppAdId } from "@/lib/meta-attribution";
+import { deletedUserLabel } from "@/lib/panel-filters";
 import { PANEL_TIME_ZONE } from "@/lib/task-backlog";
 import type { ClientConfig } from "@/lib/clients";
 import type { PagedResult } from "@/lib/paged-fetch";
@@ -216,6 +217,20 @@ function transformOpportunity(
         : undefined,
     ...(Object.keys(customFieldsResolved).length > 0 ? { customFieldsResolved } : {}),
   };
+}
+
+/**
+ * Id de usuario de GHL → nombre. Un id que `/users/` no lista es un usuario
+ * borrado de la subcuenta (su `/users/{id}` da 404): la oportunidad conserva el
+ * id pero el nombre ya no existe, así que se etiqueta como tal en vez de
+ * mostrar el id crudo. Si `/users/` falló (mapa vacío) no hay forma de
+ * distinguir un borrado de un activo, y el id queda tal cual.
+ */
+function resolveUserName(userMap: Map<string, string>, id: string | undefined): string | undefined {
+  if (!id) return id;
+  const name = userMap.get(id);
+  if (name) return name;
+  return userMap.size > 0 ? deletedUserLabel(id) : id;
 }
 
 function transformTask(ghl: GHLTask): Task {
@@ -439,7 +454,7 @@ async function fetchAppointments(userMap: Map<string, string>): Promise<Appointm
         if (seen.has(ev.id)) continue;
         seen.add(ev.id);
         const advisorId = ev.assignedUserId;
-        const advisorName = advisorId && userMap.has(advisorId) ? userMap.get(advisorId) : advisorId;
+        const advisorName = resolveUserName(userMap, advisorId);
         appointments.push({
           id: ev.id,
           contactId: ev.contactId,
@@ -638,18 +653,14 @@ export async function syncProject(
     // Transform contacts
     const contacts: Contact[] = contactsRaw.map((c) => {
       const contact = transformContact(c, customFieldMap);
-      if (contact.assignedTo && userMap.has(contact.assignedTo)) {
-        contact.assignedTo = userMap.get(contact.assignedTo);
-      }
+      contact.assignedTo = resolveUserName(userMap, contact.assignedTo);
       return contact;
     });
 
     // Transform opportunities
     const opportunities: Opportunity[] = opportunitiesRaw.map((o) => {
       const opp = transformOpportunity(o, pipelineMap, customFieldMap, lostReasonMap);
-      if (opp.assignedTo && userMap.has(opp.assignedTo)) {
-        opp.assignedTo = userMap.get(opp.assignedTo);
-      }
+      opp.assignedTo = resolveUserName(userMap, opp.assignedTo);
       return opp;
     });
 
@@ -692,10 +703,7 @@ export async function syncProject(
         adId: attr?.utmAdId || undefined,
         attributionUrl: attr?.url || undefined,
         attributionMedium: attr?.medium || attr?.utmSessionSource || undefined,
-        assignedTo:
-          raw.assignedTo && userMap.has(raw.assignedTo)
-            ? userMap.get(raw.assignedTo)
-            : raw.assignedTo,
+        assignedTo: resolveUserName(userMap, raw.assignedTo),
       };
       contactById.set(embedded.id, synth);
       contacts.push(synth);

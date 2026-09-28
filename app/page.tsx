@@ -36,6 +36,7 @@ import {
   collectAdvisors,
   EMPTY_PANEL_FILTERS,
   NO_ASESOR,
+  isDeletedUserLabel,
   type PanelFilters,
 } from "@/lib/panel-filters"
 import { buildPautaNamesByContact } from "@/lib/pauta-performance"
@@ -183,12 +184,16 @@ export default function DashboardPage() {
   const { messages } = useConversationsData()
   // Actividad de conversaciones para la matriz de abandono. Va aparte del sync
   // principal (es un recorrido de miles de conversaciones) y su ESTADO viaja
-  // con ella: con el mapa vacío la matriz acusaría abandono total.
+  // con ella: con el mapa vacío la matriz acusaría abandono total. Arranca
+  // cuando la carga principal terminó: a la vez, las dos se ahogan en 429.
   const {
     activity: conversationActivity,
     status: activityStatus,
+    progress: activityProgress,
+    meta: activityMeta,
+    errorMessage: activityError,
     refresh: refreshActivity,
-  } = useConversationActivity()
+  } = useConversationActivity({ enabled: !isLoading || Boolean(data) })
 
   const [dateFilter, setDateFilter] = useState<DateFilter>({ preset: "all" })
   const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter])
@@ -266,6 +271,7 @@ export default function DashboardPage() {
       value: a.key,
       label: a.label,
       count: counts.get(a.key) ?? 0,
+      muted: isDeletedUserLabel(a.label),
     }))
     const sinAsesor = counts.get(NO_ASESOR) ?? 0
     return sinAsesor > 0
@@ -699,6 +705,9 @@ export default function DashboardPage() {
             unfilteredOpportunities={data?.opportunities ?? []}
             conversationActivity={conversationActivity}
             activityStatus={activityStatus}
+            activityProgress={activityProgress}
+            activityMeta={activityMeta}
+            activityError={activityError}
             onRetryActivity={refreshActivity}
             calls={calls}
             messages={filteredMessages}

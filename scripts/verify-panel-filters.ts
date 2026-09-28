@@ -22,6 +22,8 @@ import {
   NO_PAUTA,
   resolveCampanas,
   type PanelFilters,
+  deletedUserLabel,
+  isDeletedUserLabel,
 } from "../lib/panel-filters";
 import {
   buildAgenciaOptions,
@@ -443,6 +445,22 @@ function main() {
     assert.deepEqual(
       buildAgenciaOptions([nada], byContact).map((o) => [o.value, o.count]),
       [["Domus", 0], ["Genicrea", 0], ["Inhouse", 0], [NO_AGENCIA, 1]]
+    );
+  }
+
+  // Usuario borrado de GHL: el id queda en la oportunidad pero el nombre ya no
+  // existe. Dos borrados distintos no se funden en una fila del filtro.
+  {
+    const a = deletedUserLabel("JZAYkIAhhcj7BNTKY6Hp");
+    const b = deletedUserLabel("2azukkwaAYy5aZGsxyQo");
+    assert.equal(a, "Usuario eliminado · …Y6Hp");
+    assert.ok(isDeletedUserLabel(a) && isDeletedUserLabel(b));
+    assert.ok(!isDeletedUserLabel("Edgar Noriega"));
+    const opps = [a, a, b].map((assignedTo, i) => ({ id: `d${i}`, assignedTo }) as Opportunity);
+    assert.deepEqual(
+      collectAdvisors(opps).map((x) => x.label),
+      [a, b],
+      "cada usuario borrado conserva su propia fila"
     );
   }
 

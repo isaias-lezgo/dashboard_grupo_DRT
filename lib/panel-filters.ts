@@ -45,6 +45,24 @@ export const EMPTY_PANEL_FILTERS: PanelFilters = {
 /** Cubeta centinela del asesor: la oportunidad que nadie tiene asignada. */
 export const NO_ASESOR = "Sin asesor"
 
+const DELETED_USER_PREFIX = "Usuario eliminado"
+
+/**
+ * Etiqueta de un `assignedTo` cuyo usuario ya no existe en la subcuenta: GHL
+ * conserva el id en la oportunidad, pero `/users/` no lo lista y `/users/{id}`
+ * responde 404, así que el nombre es irrecuperable. Se deja la cola del id para
+ * que dos usuarios borrados no se fundan en una fila y para poder buscarlos en
+ * GHL. Es un hueco de captura (hay que reasignar), no un asesor: el menú y la
+ * tabla lo pintan en el rojizo de MISSING_TEXT.
+ */
+export function deletedUserLabel(userId: string): string {
+  return `${DELETED_USER_PREFIX} · …${userId.slice(-4)}`
+}
+
+export function isDeletedUserLabel(label: string): boolean {
+  return label.startsWith(DELETED_USER_PREFIX)
+}
+
 /**
  * Cubeta centinela de la campaña: el contacto no tiene NINGÚN registro Pauta.
  * Distinta de SIN_NOMBRE_CAMPAIGN ("Sin nombre"), que es una Pauta que sí

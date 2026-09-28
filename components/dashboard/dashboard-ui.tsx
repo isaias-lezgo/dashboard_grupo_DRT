@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react"
 import { AlertTriangle, Facebook, Instagram, Globe, Info, Target, Megaphone, Layers3 } from "lucide-react"
 import { Text, type TextProps } from "recharts"
 import { cn } from "@/lib/utils"
+import { isDeletedUserLabel } from "@/lib/panel-filters"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartTooltipContent } from "@/components/ui/chart"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -107,7 +108,7 @@ export const MISSING_COLOR = "hsl(var(--missing))"
  * Donde hay bandera (`row.missing`, `col.kind === "no-date"`, …) se usa esa.
  */
 export function isMissingLabel(label: string): boolean {
-  return /^sin\s/i.test(label.trim())
+  return /^sin\s/i.test(label.trim()) || isDeletedUserLabel(label.trim())
 }
 
 type AxisTickProps = TextProps & { payload?: { value?: string | number } }

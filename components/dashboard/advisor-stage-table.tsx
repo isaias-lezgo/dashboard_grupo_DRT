@@ -26,6 +26,7 @@ import {
   type AdvisorRow,
   type StageKind,
 } from "@/lib/advisor-breakdown"
+import { isDeletedUserLabel } from "@/lib/panel-filters"
 import { PANEL_SCOPES, scopeOpportunities, type PanelId } from "@/lib/panel-scope"
 import { cn } from "@/lib/utils"
 import {
@@ -302,7 +303,8 @@ export function AdvisorStageTable({
                         className={cn(
                           stickyCol,
                           "max-w-[14rem] truncate border-b border-r border-border px-3 py-1.5 text-left font-medium",
-                          row.unassigned && cn("italic", MISSING_TEXT)
+                          row.unassigned && cn("italic", MISSING_TEXT),
+                          isDeletedUserLabel(row.label) && MISSING_TEXT
                         )}
                         title={row.label}
                       >
