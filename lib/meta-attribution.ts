@@ -21,6 +21,7 @@
 // No reparte gasto entre desarrollos, no convierte moneda y no toca lib/pauta.ts:
 // isDePauta sigue siendo "es de pauta"; esto es "cuánto costó".
 import type {
+  Contact,
   MetaAccount,
   MetaAd,
   MetaAdset,
@@ -59,6 +60,11 @@ function normalizeAdId(v: unknown): string | null {
   return /^\d+$/.test(s) ? s : null;
 }
 
+// Una importación masiva no es un lead de pauta aunque traiga ad id copiado.
+function isImported(opp: Opportunity): boolean {
+  return (opp.attributionMedium ?? "").toLowerCase() === "csv_import";
+}
+
 // "ID Pauta" (el poblado en DRT) e "ID de Pauta" (existe, casi vacío). Nunca
 // "URL Pauta" ni "Nombre Pauta".
 const AD_ID_FIELD = /^id\s*(de\s*)?pauta$/i;
@@ -87,39 +93,51 @@ function fold(s: string): string {
 export interface MetaIndex {
   byAd: Map<string, { ad: MetaAd; adset?: MetaAdset; campaign?: MetaCampaign; account?: MetaAccount }>;
   dailyByAd: Map<string, MetaDailyRow[]>;
-  /** Nombre plegado (de ad o de campaña) → campañas donde aparece. Base del nivel byName. */
+  campaignsById: Map<string, MetaCampaign>;
+  accountsById: Map<string, MetaAccount>;
+  /** Nombre plegado de ANUNCIO → ids de anuncio. Genéricos en DRT ("a1", "anuncio 2"). */
+  adsByName: Map<string, Set<string>>;
+  /** Nombre plegado de CAMPAÑA → ids de campaña. El nombre que el cliente reconoce. */
+  campaignsByName: Map<string, Set<string>>;
+  /** Nombre plegado (de ad o de campaña) → campañas donde aparece. Lo conserva el filtro Campaña. */
   byName: Map<string, Set<string>>;
 }
 
+function addTo(m: Map<string, Set<string>>, key: string, value: string) {
+  const k = fold(key);
+  if (!k) return;
+  const set = m.get(k) ?? new Set<string>();
+  set.add(value);
+  m.set(k, set);
+}
+
 export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
-  const accounts = new Map(meta.accounts.map((a) => [a.id, a]));
-  const campaigns = new Map(meta.campaigns.map((c) => [c.id, c]));
+  const accountsById = new Map(meta.accounts.map((a) => [a.id, a]));
+  const campaignsById = new Map(meta.campaigns.map((c) => [c.id, c]));
   const adsets = new Map(meta.adsets.map((s) => [s.id, s]));
   const byAd: MetaIndex["byAd"] = new Map();
-  const byName: MetaIndex["byName"] = new Map();
-  const addName = (name: string, campaignId: string | undefined) => {
-    if (!campaignId) return;
-    const k = fold(name);
-    if (!k) return;
-    const set = byName.get(k) ?? new Set<string>();
-    set.add(campaignId);
-    byName.set(k, set);
-  };
+  const adsByName = new Map<string, Set<string>>();
+  const campaignsByName = new Map<string, Set<string>>();
+  const byName = new Map<string, Set<string>>();
   for (const ad of meta.ads) {
     const adset = adsets.get(ad.adsetId);
-    const campaign = adset ? campaigns.get(adset.campaignId) : undefined;
-    const account = campaign ? accounts.get(campaign.accountId) : undefined;
+    const campaign = adset ? campaignsById.get(adset.campaignId) : undefined;
+    const account = campaign ? accountsById.get(campaign.accountId) : undefined;
     byAd.set(ad.id, { ad, adset, campaign, account });
-    addName(ad.name, campaign?.id);
+    addTo(adsByName, ad.name, ad.id);
+    if (campaign) addTo(byName, ad.name, campaign.id);
   }
-  for (const c of meta.campaigns) addName(c.name, c.id);
+  for (const c of meta.campaigns) {
+    addTo(campaignsByName, c.name, c.id);
+    addTo(byName, c.name, c.id);
+  }
   const dailyByAd = new Map<string, MetaDailyRow[]>();
   for (const d of meta.daily) {
     const arr = dailyByAd.get(d.adId) ?? [];
     arr.push(d);
     dailyByAd.set(d.adId, arr);
   }
-  return { byAd, dailyByAd, byName };
+  return { byAd, dailyByAd, campaignsById, accountsById, adsByName, campaignsByName, byName };
 }
 
 /**
@@ -147,6 +165,145 @@ export function buildPautaContacts(pautas: Pauta[]): Set<string> {
   return s;
 }
 
+// ── Llaves de una oportunidad ───────────────────────────────────────────────
+// Cada nivel de classifyLead lee UNA clase de llave, de todas las fuentes en
+// las que el CRM la guarda: la oportunidad primero, el contacto después;
+// custom fields antes que attributions; isFirst antes que isLast. Sin repetir.
+
+type Attr = Record<string, unknown>;
+
+const URL_FIELD = /^url\s*(de\s*)?pauta$/i;
+// "Nombre Pauta" y el campo "Pauta" a secas (6 320 oportunidades en DRT).
+const NAME_FIELD = /^(nombre\s*(de\s*(la\s*)?)?pauta|pauta)$/i;
+
+function cfValues(cf: Record<string, string | string[]> | undefined, re: RegExp): string[] {
+  const out: string[] = [];
+  if (!cf) return out;
+  for (const [name, val] of Object.entries(cf)) {
+    if (!re.test(name.trim())) continue;
+    for (const v of Array.isArray(val) ? val : [val]) {
+      const s = String(v ?? "").trim();
+      if (s) out.push(s);
+    }
+  }
+  return out;
+}
+
+function orderedAttrs(attrs: unknown): Attr[] {
+  if (!Array.isArray(attrs)) return [];
+  const list = attrs as Attr[];
+  return [...list.filter((a) => a.isFirst === true), ...list.filter((a) => a.isFirst !== true)];
+}
+
+/** attributions de la oportunidad y luego las de su contacto. */
+function attrsOf(opp: Opportunity, contactById?: ReadonlyMap<string, Contact>): Attr[] {
+  return [...orderedAttrs(opp.attributions), ...orderedAttrs(contactById?.get(opp.contactId)?.attributions)];
+}
+
+function dedupe(values: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const s = String(v ?? "").trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+export function adIdCandidates(opp: Opportunity, contactById?: ReadonlyMap<string, Contact>): string[] {
+  const contact = contactById?.get(opp.contactId);
+  return dedupe([
+    normalizeAdId(opp.adId),
+    ...cfValues(opp.customFieldsResolved, AD_ID_FIELD).map(normalizeAdId),
+    ...cfValues(contact?.customFieldsResolved, AD_ID_FIELD).map(normalizeAdId),
+    ...attrsOf(opp, contactById).map((a) => normalizeAdId(a.utmAdId) ?? normalizeAdId(a.adId)),
+  ]);
+}
+
+/** Sin espacios, sin query ni fragmento, sin "/" final. fb.me distingue mayúsculas: no se pliega. */
+export function normalizeUrl(u: string): string {
+  return u.trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+}
+
+export function urlCandidates(opp: Opportunity, contactById?: ReadonlyMap<string, Contact>): string[] {
+  const contact = contactById?.get(opp.contactId);
+  return dedupe(
+    [
+      ...cfValues(opp.customFieldsResolved, URL_FIELD),
+      opp.attributionUrl,
+      ...cfValues(contact?.customFieldsResolved, URL_FIELD),
+      contact?.attributionUrl,
+      ...attrsOf(opp, contactById).map((a) => (typeof a.url === "string" ? a.url : "")),
+    ].map((u) => (u ? normalizeUrl(u) : ""))
+  );
+}
+
+export function nameCandidates(
+  opp: Opportunity,
+  contactById?: ReadonlyMap<string, Contact>,
+  pautaNamesByContact?: ReadonlyMap<string, string[]>
+): string[] {
+  const contact = contactById?.get(opp.contactId);
+  const attrs = attrsOf(opp, contactById);
+  return dedupe([
+    ...cfValues(opp.customFieldsResolved, NAME_FIELD),
+    ...cfValues(contact?.customFieldsResolved, NAME_FIELD),
+    ...attrs.map((a) => a.utmCampaign as string | undefined),
+    ...attrs.map((a) => a.adName as string | undefined),
+    ...(pautaNamesByContact?.get(opp.contactId) ?? []),
+  ]).filter((n) => n !== SIN_NOMBRE_CAMPAIGN);
+}
+
+// ── Lo que los leads enseñan sobre Meta ─────────────────────────────────────
+// Meta no expone la URL corta (fb.me/…) de un anuncio ni la campaña de un
+// anuncio ya borrado. Los leads que traen las dos cosas — URL y ad id resuelto,
+// o ad id borrado y utmCampaignId — sí lo dicen. Se aprende sobre el set SIN
+// filtrar, como assignAdDesarrollos; las importaciones no enseñan nada.
+
+export interface LearnedIndex {
+  byUrl: Map<string, { ads: Set<string>; campaigns: Set<string> }>;
+  /** ad id con gasto pero fuera de /ads → campaña, según el utmCampaignId de sus leads. */
+  campaignOfDeletedAd: Map<string, string>;
+}
+
+/** Un ad id "nuestro": está en la jerarquía o, borrado, todavía reporta gasto. */
+function knownAd(index: MetaIndex, adId: string): boolean {
+  return index.byAd.has(adId) || index.dailyByAd.has(adId);
+}
+
+export function buildLearnedIndex(
+  allOpportunities: Opportunity[],
+  index: MetaIndex,
+  contactById?: ReadonlyMap<string, Contact>
+): LearnedIndex {
+  const byUrl: LearnedIndex["byUrl"] = new Map();
+  const campaignOfDeletedAd = new Map<string, string>();
+  for (const o of allOpportunities) {
+    if (isImported(o)) continue;
+    const adId = adIdCandidates(o, contactById).find((id) => knownAd(index, id));
+    if (!adId) continue;
+    let campaignId = index.byAd.get(adId)?.campaign?.id;
+    if (!campaignId) {
+      const cid = attrsOf(o, contactById)
+        .map((a) => String(a.utmCampaignId ?? "").trim())
+        .find((c) => c && index.campaignsById.has(c));
+      if (cid) {
+        campaignId = cid;
+        if (!campaignOfDeletedAd.has(adId)) campaignOfDeletedAd.set(adId, cid);
+      }
+    }
+    for (const u of urlCandidates(o, contactById)) {
+      const e = byUrl.get(u) ?? { ads: new Set<string>(), campaigns: new Set<string>() };
+      e.ads.add(adId);
+      if (campaignId) e.campaigns.add(campaignId);
+      byUrl.set(u, e);
+    }
+  }
+  return { byUrl, campaignOfDeletedAd };
+}
+
 // ── Clasificación de un lead ────────────────────────────────────────────────
 
 export type LeadAttribution =
@@ -161,11 +318,6 @@ export interface AttributionContext {
   pautaContacts: HasKey;
   /** buildPautaNameByContact(allPautas), de lib/pauta.ts. */
   pautaNameByContact: Map<string, string>;
-}
-
-// Una importación masiva no es un lead de pauta aunque traiga ad id copiado.
-function isImported(opp: Opportunity): boolean {
-  return (opp.attributionMedium ?? "").toLowerCase() === "csv_import";
 }
 
 export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAttribution {
@@ -188,37 +340,23 @@ export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAtt
 }
 
 // ── Desarrollo de cada ad ───────────────────────────────────────────────────
-
-// 1) la moda de los pipelines de sus leads (sobre el set SIN filtrar); 2) el
-// nombre de un desarrollo en campaña → adset → ad; 3) Sin desarrollo. El gasto
-// no se reparte: un ad es de UN desarrollo. `mixed` lista los ads con leads en
-// más de un desarrollo, para que la UI lo diga en vez de callarlo.
+// En DRT cada cuenta publicitaria ES un desarrollo ("Cañadas by El Mirador ",
+// "Átria "…), así que la cuenta manda. Solo si la cuenta no se llama como
+// ningún pipeline se cae a la inferencia de la entrega ①: la moda de los
+// pipelines de sus leads, luego el nombre de un desarrollo en campaña → adset →
+// ad, luego Sin desarrollo. El gasto no se reparte: un ad es de UN desarrollo.
+// `mixed` lista los ads con leads en más de un desarrollo, para que la UI lo
+// diga en vez de callarlo.
 //
-// El fallback por nombre devuelve el nombre REAL del pipeline (el mismo string
-// que desarrolloOf), no la etiqueta de PANEL_SCOPES: scopeMetaDaily compara
-// contra el pipeline, y una etiqueta distinta haría desaparecer esos ads del tab.
-export function assignAdDesarrollos(
-  meta: MetaAdsData,
-  index: MetaIndex,
-  allOpportunities: Opportunity[],
-  pipelines: Pipeline[] | undefined
-): { byAd: Map<string, string>; mixed: string[] } {
-  const votes = new Map<string, Map<string, number>>();
-  for (const o of allOpportunities) {
-    if (isImported(o)) continue;
-    const adId = oppAdId(o);
-    if (!adId || !index.byAd.has(adId)) continue;
-    const d = desarrolloOf(o, pipelines);
-    if (d === NO_DESARROLLO) continue;
-    const m = votes.get(adId) ?? new Map<string, number>();
-    m.set(d, (m.get(d) ?? 0) + 1);
-    votes.set(adId, m);
-  }
+// El valor siempre es el nombre REAL del pipeline (el mismo string que
+// desarrolloOf), no la etiqueta de PANEL_SCOPES: scopeMetaDaily compara contra
+// el pipeline, y una etiqueta distinta haría desaparecer esos ads del tab.
 
-  // Agujas para el fallback por nombre: el nombre de cada pipeline (así un
-  // séptimo desarrollo aparece sin tocar PANEL_SCOPES) más las etiquetas de
-  // PANEL_SCOPES resueltas a su pipeline real. El valor siempre es el string que
-  // devolvería desarrolloOf, para que scopeMetaDaily lo encuentre.
+// Agujas: el nombre de cada pipeline (así un séptimo desarrollo aparece sin
+// tocar PANEL_SCOPES) más las etiquetas de PANEL_SCOPES resueltas a su
+// pipeline real. Las más largas primero: "cañadas by el mirador" antes que
+// "cañadas".
+function desarrolloNeedles(pipelines: Pipeline[] | undefined): { folded: string; name: string }[] {
   const needles = new Map<string, string>();
   for (const p of pipelines ?? []) {
     const name = p.name?.trim();
@@ -232,17 +370,55 @@ export function assignAdDesarrollos(
     const k = fold(scope.label);
     if (!needles.has(k)) needles.set(k, real || scope.label);
   }
-  // Las agujas más largas primero: "cañadas by el mirador" antes que "cañadas".
-  const labels = [...needles.entries()]
+  return [...needles.entries()]
     .map(([folded, name]) => ({ folded, name }))
     .sort((a, b) => b.folded.length - a.folded.length);
+}
+
+/** id de cuenta ("act_…") → nombre real del pipeline, para las cuentas que se llaman como un desarrollo. */
+export function accountToPipeline(accounts: MetaAccount[], pipelines: Pipeline[] | undefined): Map<string, string> {
+  const labels = desarrolloNeedles(pipelines);
+  const m = new Map<string, string>();
+  for (const a of accounts) {
+    const hay = fold(a.name);
+    const hit = labels.find((l) => hay.includes(l.folded));
+    if (hit) m.set(a.id, hit.name);
+  }
+  return m;
+}
+
+export function assignAdDesarrollos(
+  meta: MetaAdsData,
+  index: MetaIndex,
+  allOpportunities: Opportunity[],
+  pipelines: Pipeline[] | undefined
+): { byAd: Map<string, string>; mixed: string[] } {
+  const byAccount = accountToPipeline(meta.accounts, pipelines);
+  const votes = new Map<string, Map<string, number>>();
+  for (const o of allOpportunities) {
+    if (isImported(o)) continue;
+    const adId = oppAdId(o);
+    if (!adId || !index.byAd.has(adId)) continue;
+    const d = desarrolloOf(o, pipelines);
+    if (d === NO_DESARROLLO) continue;
+    const m = votes.get(adId) ?? new Map<string, number>();
+    m.set(d, (m.get(d) ?? 0) + 1);
+    votes.set(adId, m);
+  }
+  const labels = desarrolloNeedles(pipelines);
 
   const byAd = new Map<string, string>();
   const mixed: string[] = [];
   for (const ad of meta.ads) {
     const v = votes.get(ad.id);
+    if (v && v.size > 1) mixed.push(ad.id);
+    const entry = index.byAd.get(ad.id);
+    const fromAccount = entry?.account ? byAccount.get(entry.account.id) : undefined;
+    if (fromAccount) {
+      byAd.set(ad.id, fromAccount);
+      continue;
+    }
     if (v && v.size > 0) {
-      if (v.size > 1) mixed.push(ad.id);
       let best = "";
       let bestN = -1;
       for (const [d, n] of v) {
@@ -254,10 +430,16 @@ export function assignAdDesarrollos(
       byAd.set(ad.id, best);
       continue;
     }
-    const entry = index.byAd.get(ad.id);
     const haystack = fold([entry?.campaign?.name, entry?.adset?.name, ad.name].filter(Boolean).join(" | "));
     const hit = labels.find((l) => haystack.includes(l.folded));
     byAd.set(ad.id, hit ? hit.name : NO_DESARROLLO);
+  }
+  // Anuncios borrados: tienen filas diarias pero no están en /ads. Su cuenta
+  // viene en la fila; sin cuenta reconocible, Sin desarrollo.
+  for (const [adId, rows] of index.dailyByAd) {
+    if (byAd.has(adId)) continue;
+    const acc = rows.find((r) => r.accountId)?.accountId;
+    byAd.set(adId, (acc && byAccount.get(acc)) || NO_DESARROLLO);
   }
   return { byAd, mixed };
 }

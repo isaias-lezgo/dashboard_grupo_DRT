@@ -11,6 +11,12 @@ import {
   NO_AD_ID,
   oppAdId,
   buildMetaIndex,
+  accountToPipeline,
+  adIdCandidates,
+  urlCandidates,
+  nameCandidates,
+  normalizeUrl,
+  buildLearnedIndex,
   buildPautaContacts,
   classifyLead,
   assignAdDesarrollos,
@@ -18,14 +24,12 @@ import {
   localDay,
   stageIndexOf,
   reachedStage,
-  buildCostPerStage,
-  buildCampaignPerformance,
   STAGE_TARGETS,
   type AttributionContext,
 } from "../lib/meta-attribution";
 import { buildPautaNameByContact } from "../lib/pauta";
 import { NO_DESARROLLO } from "../lib/panel-scope";
-import type { MetaAdsData, Opportunity, Pauta, Pipeline } from "../lib/types";
+import type { Contact, MetaAdsData, Opportunity, Pauta, Pipeline } from "../lib/types";
 
 const STAGES = [
   "00. Recibido", "01. Contactado", "02. Lead en Seguimiento", "03. Lead Calificado",
@@ -51,16 +55,19 @@ const meta: MetaAdsData = {
   accounts: [
     { id: "act_1", name: "Uno", currency: "MXN", timezone: "America/Mexico_City" },
     { id: "act_2", name: "Dos", currency: "USD", timezone: "America/Mexico_City" },
+    { id: "act_3", name: "Palmyra Residencial ", currency: "MXN", timezone: "America/Mexico_City" },
   ],
   campaigns: [
     { id: "c1", name: "IW - Cañadas - Agosto", accountId: "act_1" },
     { id: "c2", name: "IW - Atria - Agosto", accountId: "act_1" },
     { id: "c3", name: "Branding genérico", accountId: "act_2" },
+    { id: "c4", name: "PALMYRA | MAYO | PERFILES", accountId: "act_3" },
   ],
   adsets: [
     { id: "s1", name: "Set", campaignId: "c1" },
     { id: "s2", name: "Set", campaignId: "c2" },
     { id: "s3", name: "Set", campaignId: "c3" },
+    { id: "s4", name: "Set", campaignId: "c4" },
   ],
   ads: [
     { id: "101", name: "Cañadas by El Mirador", adsetId: "s1" },
@@ -68,13 +75,17 @@ const meta: MetaAdsData = {
     { id: "201", name: "Atria lofts", adsetId: "s2" },
     { id: "301", name: "Terrenos desde $1.2 M", adsetId: "s3" },
     { id: "302", name: "Atria lofts", adsetId: "s3" },             // "Atria lofts" en DOS campañas → ambiguo
+    { id: "401", name: "anuncio 1", adsetId: "s4" },
   ],
   daily: [
-    { adId: "101", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
-    { adId: "101", date: "2026-08-15", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
-    { adId: "201", date: "2026-08-15", spend: 50, impressions: 500, reach: 400, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
-    { adId: "301", date: "2026-08-20", spend: 30, impressions: 300, reach: 200, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
-    { adId: "101", date: "2026-09-01", spend: 999, impressions: 1, reach: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
+    { adId: "101", accountId: "act_1", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
+    { adId: "101", accountId: "act_1", date: "2026-08-15", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
+    { adId: "201", accountId: "act_1", date: "2026-08-15", spend: 50, impressions: 500, reach: 400, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
+    { adId: "301", accountId: "act_2", date: "2026-08-20", spend: 30, impressions: 300, reach: 200, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
+    { adId: "101", accountId: "act_1", date: "2026-09-01", spend: 999, impressions: 1, reach: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
+    { adId: "401", accountId: "act_3", date: "2026-08-03", spend: 40, impressions: 400, reach: 300, clicks: 4, linkClicks: 4, leadsForm: 1, leadsMsg: 0 },
+    // Anuncio BORRADO: reporta gasto pero no está en `ads`.
+    { adId: "777", accountId: "act_1", date: "2026-08-04", spend: 70, impressions: 700, reach: 600, clicks: 7, linkClicks: 7, leadsForm: 0, leadsMsg: 1 },
   ],
   window: { since: "2026-08-01", until: "2026-09-13" },
   failedAccounts: [],
@@ -106,6 +117,68 @@ async function main() {
   assert.deepEqual([...index.byName.get("canadas by el mirador")!], ["c1"]);
   assert.deepEqual([...index.byName.get("atria lofts")!].sort(), ["c2", "c3"]);
   assert.deepEqual([...index.byName.get("iw - canadas - agosto")!], ["c1"], "los nombres de campaña también se indexan");
+  assert.equal(index.campaignsById.get("c4")?.accountId, "act_3");
+  assert.equal(index.accountsById.get("act_3")?.currency, "MXN");
+  assert.deepEqual([...index.adsByName.get("canadas by el mirador")!].sort(), ["101", "102"]);
+  assert.deepEqual([...index.campaignsByName.get("palmyra | mayo | perfiles")!], ["c4"]);
+  assert.equal(index.adsByName.has("palmyra | mayo | perfiles"), false, "nombre de campaña no es nombre de anuncio");
+
+  // --- cuenta = desarrollo: el nombre de la cuenta contra los pipelines, agujas largas primero
+  const accMap = accountToPipeline(meta.accounts, pipelines);
+  assert.equal(accMap.get("act_3"), "Palmyra", "\"Palmyra Residencial \" (con espacio) → pipeline Palmyra");
+  assert.equal(accMap.has("act_1"), false, "\"Uno\" no se llama como ningún desarrollo");
+  const accented: Pipeline[] = [...pipelines, { id: "p-atr2", name: "Átria", stages: STAGES }];
+  assert.equal(
+    accountToPipeline([{ id: "act_9", name: "Átria ", currency: "MXN", timezone: "" }], accented).get("act_9"),
+    "Átria",
+    "acentos y mayúsculas no importan; devuelve el nombre REAL del pipeline"
+  );
+
+  // --- llaves de una oportunidad: propias primero, luego del contacto; sin repetir
+  const contactById = new Map<string, Contact>([
+    ["c-K", {
+      id: "c-K", name: "K", email: "", phone: "", tags: [], dateAdded: "2026-08-01T00:00:00.000Z", createdAt: "2026-08-01T00:00:00.000Z",
+      customFieldsResolved: { "ID Pauta": "555", "URL Pauta": "https://fb.me/CONTACTO", "Nombre Pauta": "Del contacto" },
+      attributions: [{ isLast: true, utmAdId: "666", url: "https://fb.me/ULTIMA", adName: "Ultima attr" }],
+    }],
+  ]);
+  const k = opp({
+    id: "K", contactId: "c-K", adId: "111",
+    customFieldsResolved: { "ID de Pauta": "222", "URL Pauta": "https://fb.me/OPP/", "Nombre Pauta": "De la opp" },
+    attributions: [
+      { isFirst: true, utmAdId: "111", url: "https://fb.me/OPP", utmCampaign: "Camp first" },
+      { isLast: true, utmAdId: "333", url: "https://www.instagram.com/p/X/?igsh=1", adName: "Ad last" },
+    ],
+  });
+  assert.deepEqual(adIdCandidates(k, contactById), ["111", "222", "555", "333", "666"]);
+  assert.deepEqual(urlCandidates(k, contactById), [
+    "https://fb.me/OPP", "https://fb.me/CONTACTO", "https://www.instagram.com/p/X", "https://fb.me/ULTIMA",
+  ]);
+  assert.deepEqual(nameCandidates(k, contactById, new Map([["c-K", ["Pauta obj", "Sin nombre"]]])), [
+    "De la opp", "Del contacto", "Camp first", "Ad last", "Ultima attr", "Pauta obj",
+  ]);
+  assert.equal(normalizeUrl(" https://fb.me/Abc/?x=1#y "), "https://fb.me/Abc");
+  assert.deepEqual(adIdCandidates(opp({ id: "nada" })), []);
+
+  // --- lo aprendido de los leads: URL → anuncio/campaña, y la campaña de un anuncio borrado
+  const learned = buildLearnedIndex(
+    [
+      opp({ id: "L1", adId: "101", attributions: [{ isFirst: true, utmAdId: "101", url: "https://fb.me/UNO" }] }),
+      opp({ id: "L2", adId: "102", attributions: [{ isFirst: true, utmAdId: "102", url: "https://fb.me/UNO" }] }),
+      opp({ id: "L3", adId: "201", attributions: [{ isFirst: true, utmAdId: "201", url: "https://fb.me/DOS" }] }),
+      opp({ id: "L4", adId: "777", attributions: [{ isFirst: true, utmAdId: "777", utmCampaignId: "c1", url: "https://fb.me/DEL" }] }),
+      opp({ id: "L5", adId: "9999", attributions: [{ isFirst: true, utmAdId: "9999", url: "https://fb.me/NADIE" }] }),
+      opp({ id: "L6", adId: "101", attributionMedium: "csv_import", attributions: [{ isFirst: true, utmAdId: "101", url: "https://fb.me/CSV" }] }),
+    ],
+    index
+  );
+  assert.deepEqual([...learned.byUrl.get("https://fb.me/UNO")!.ads].sort(), ["101", "102"], "una URL, dos anuncios de la misma campaña");
+  assert.deepEqual([...learned.byUrl.get("https://fb.me/UNO")!.campaigns], ["c1"]);
+  assert.deepEqual([...learned.byUrl.get("https://fb.me/DOS")!.ads], ["201"]);
+  assert.equal(learned.byUrl.has("https://fb.me/NADIE"), false, "un ad id que no está en Meta no enseña nada");
+  assert.equal(learned.byUrl.has("https://fb.me/CSV"), false, "una importación no enseña nada");
+  assert.deepEqual([...learned.byUrl.get("https://fb.me/DEL")!.ads], ["777"], "el anuncio borrado tiene gasto: sí es nuestro");
+  assert.equal(learned.campaignOfDeletedAd.get("777"), "c1", "la campaña del borrado sale del utmCampaignId de su lead");
 
   // --- clasificación de un lead
   const ctx: AttributionContext = {
@@ -159,6 +232,14 @@ async function main() {
   assert.equal(desarrolloByAd.get("301"), NO_DESARROLLO, "sin leads y sin nombre de desarrollo");
   assert.equal(desarrolloByAd.get("102"), "Cañadas", "sin leads, pero la campaña dice Cañadas");
   assert.equal(desarrolloByAd.get("302"), "Atria", "la campaña es 'Branding genérico', pero el nombre del AD dice Atria");
+  assert.equal(desarrolloByAd.get("401"), "Palmyra", "la CUENTA manda: act_3 es Palmyra aunque no tenga leads");
+  assert.equal(desarrolloByAd.get("777"), NO_DESARROLLO, "un anuncio borrado sin cuenta reconocible: sin desarrollo");
+  const canByAccount = assignAdDesarrollos(
+    { ...meta, accounts: [{ id: "act_1", name: "Cañadas by El Mirador ", currency: "MXN", timezone: "" }, ...meta.accounts.slice(1)] },
+    index, opps, pipelines
+  ).byAd;
+  assert.equal(canByAccount.get("201"), "Cañadas", "con la cuenta reconocida, ni la moda de leads (Atria) ni el nombre del ad la contradicen");
+  assert.equal(canByAccount.get("777"), "Cañadas", "el borrado hereda el desarrollo de la cuenta de su fila diaria");
   // un desarrollo que NO está en PANEL_SCOPES pero sí en los pipelines también se detecta por nombre
   const withSeventh: Pipeline[] = [...pipelines, { id: "p-7", name: "Nuevo Bosque", stages: STAGES }];
   const metaNoLeads = { ...meta, ads: [{ id: "701", name: "Nuevo Bosque lotes", adsetId: "s1" }], daily: [] };
@@ -169,7 +250,7 @@ async function main() {
   assert.equal(scopeMetaDaily(meta, desarrolloByAd, "general", pipelines), meta.daily);
   const canDaily = scopeMetaDaily(meta, desarrolloByAd, "canadas", pipelines);
   assert.deepEqual(canDaily.map((d) => d.adId), ["101", "101", "101"]);
-  assert.deepEqual(scopeMetaDaily(meta, desarrolloByAd, "palmyra", pipelines), []);
+  assert.deepEqual(scopeMetaDaily(meta, desarrolloByAd, "palmyra", pipelines).map((d) => d.adId), ["401"]);
 
   // --- día local: 2026-07-31T23:30Z es 31 de julio en CDMX (UTC-6); 2026-08-15T05:30Z es 14 de agosto
   assert.equal(localDay("2026-07-31T23:30:00.000Z"), "2026-07-31");
@@ -187,60 +268,6 @@ async function main() {
   assert.equal(reachedStage(opp({ id: "x", stage: "02. Lead en Seguimiento", status: "won" }), venta), true, "status won cuenta como Venta aunque la etapa no");
   assert.equal(reachedStage(opp({ id: "x", stage: "Negocio perdido" }), visita), false);
 
-  // --- costo por etapa, agosto, GENERAL
-  const range = { start: "2026-08-01", end: "2026-08-31" };
-  const cost = buildCostPerStage({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range });
-  assert.deepEqual(cost.spendByCurrency, { MXN: 250, USD: 30 });
-  assert.equal(cost.mixedCurrency, true);
-  // exactos en agosto (día local): 1,2,3,4,5,6 (a1) + 7 (a2, 14 ago) = 7; la 10 es 31 de julio
-  assert.equal(cost.leadsExact, 7);
-  assert.equal(cost.leadsByName, 1, "la 11, por el registro Pauta del contacto");
-  assert.equal(cost.leadsCrm, 8, "exactos + por nombre");
-  assert.equal(cost.leadsMeta, 7, "4+2 msg + 1 form");
-  assert.equal(cost.noAdId, 1, "la 8: de pauta, sin id ni nombre");
-  assert.equal(cost.unknownAdLeads, 1, "la 9");
-  assert.equal(cost.notPauta, 2, "referido + csv_import; nunca entran al costo");
-  const byKey = Object.fromEntries(cost.stages.map((s) => [s.key, s]));
-  assert.equal(byKey.contactado.reached, 4, "4 (05), 5 (07), 6 (08), 11 (04)");
-  assert.equal(byKey.cita.reached, 4);
-  assert.equal(byKey.visita.reached, 3);
-  assert.equal(byKey.apartado.reached, 2);
-  assert.equal(byKey.venta.reached, 1);
-  assert.deepEqual(byKey.venta.oppIds, ["6"]);
-  assert.equal(byKey.venta.costPerResult, null, "con moneda mixta no hay costo consolidado");
-
-  // --- una sola moneda: costo = gasto / alcanzaron; sin alcanzaron → null
-  const mxnDaily = meta.daily.filter((d) => d.adId !== "301");
-  const costMxn = buildCostPerStage({ opportunities: opps, daily: mxnDaily, ctx, accounts: meta.accounts, range });
-  assert.equal(costMxn.mixedCurrency, false);
-  assert.equal(costMxn.stages.find((s) => s.key === "venta")?.costPerResult, 250);
-  assert.equal(costMxn.stages.find((s) => s.key === "apartado")?.costPerResult, 125);
-  const nadie = buildCostPerStage({ opportunities: [opp({ id: "solo", adId: "101" })], daily: mxnDaily, ctx, accounts: meta.accounts, range });
-  assert.equal(nadie.stages.find((s) => s.key === "venta")?.costPerResult, null, "sin ventas → null, nunca ∞");
-
-  // --- sin rango = toda la ventana
-  const all = buildCostPerStage({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range: null });
-  assert.deepEqual(all.spendByCurrency, { MXN: 1249, USD: 30 });
-  assert.equal(all.leadsExact, 8, "la 10 (julio) entra");
-
-  // --- rendimiento por campaña, agosto
-  const rows = buildCampaignPerformance({ opportunities: opps, daily: meta.daily, ctx, accounts: meta.accounts, range });
-  assert.deepEqual(rows.map((r) => r.campaignId), ["c1", "c2", "c3"], "por gasto desc");
-  const c1 = rows[0];
-  assert.equal(c1.spend, 200);
-  assert.equal(c1.currency, "MXN");
-  assert.equal(c1.leadsMeta, 6);
-  assert.equal(c1.leadsCrm, 7, "6 exactos + la 11 por nombre");
-  assert.equal(c1.leadsByName, 1);
-  assert.equal(c1.reached.venta, 1);
-  assert.equal(c1.cpl, 200 / 7);
-  assert.equal(c1.costPerVenta, 200);
-  assert.equal(c1.cpm, 100, "200 / 2000 impresiones × 1000");
-  assert.equal(c1.ctr, 0.05, "100 clics / 2000 impresiones");
-  const c3 = rows[2];
-  assert.equal(c3.leadsCrm, 0);
-  assert.equal(c3.cpl, null, "gasto sin leads: null, y la UI lo pinta en rojizo");
-  assert.deepEqual(c3.adIds, ["301"]);
 
   console.log("✅ verify:meta-attribution OK");
 }
