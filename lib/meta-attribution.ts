@@ -158,6 +158,22 @@ export function buildMetaCampaignByAd(meta: MetaAdsData | null | undefined): Map
   return m;
 }
 
+/**
+ * oppId → nombre de la campaña de Meta por la cadena completa (classifyLead).
+ * Base del primer nivel del filtro global de campaña. Se arma en app/page.tsx
+ * sobre el set sin filtrar, una vez por payload.
+ */
+export function buildMetaCampaignByOpp(opps: Opportunity[], ctx: AttributionContext): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const o of opps) {
+    const a = classifyLead(o, ctx);
+    const cid = a.kind === "ad" ? a.campaignId : a.kind === "campaign" ? a.campaignId : null;
+    const name = cid ? ctx.index.campaignsById.get(cid)?.name?.trim() : undefined;
+    if (name) m.set(o.id, name);
+  }
+  return m;
+}
+
 /** contactIds con al menos un registro Pauta — la mitad "objeto" de isDePauta. */
 export function buildPautaContacts(pautas: Pauta[]): Set<string> {
   const s = new Set<string>();

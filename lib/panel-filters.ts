@@ -139,6 +139,12 @@ export interface CampanaContext {
   pautaNamesByContact: ReadonlyMap<string, string[]>
   /** `buildMetaCampaignByAd(data.metaAds)`; vacío o ausente sin conexión con Meta. */
   metaCampaignByAd?: ReadonlyMap<string, string> | null
+  /**
+   * oppId → campaña de Meta por la cadena completa (`buildMetaCampaignByOpp`):
+   * ad id, utmCampaignId, URL aprendida o nombre. Manda sobre `metaCampaignByAd`,
+   * que queda como respaldo por ad id.
+   */
+  metaCampaignByOpp?: ReadonlyMap<string, string> | null
 }
 
 /**
@@ -168,6 +174,10 @@ export function resolveCampanas(
   opp: Opportunity,
   ctx: CampanaContext
 ): { names: string[]; source: CampanaSource } {
+  if (!isImported(opp)) {
+    const byOpp = ctx.metaCampaignByOpp?.get(opp.id)
+    if (byOpp) return { names: [byOpp], source: "meta" }
+  }
   if (ctx.metaCampaignByAd && ctx.metaCampaignByAd.size > 0 && !isImported(opp)) {
     const adId = oppAdId(opp)
     const fromMeta = adId ? ctx.metaCampaignByAd.get(adId) : undefined

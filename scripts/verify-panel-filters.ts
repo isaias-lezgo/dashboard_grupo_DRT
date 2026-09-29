@@ -361,6 +361,13 @@ function main() {
     assert.deepEqual(resolveCampanas(adDesconocido, ctx), { names: [NO_PAUTA], source: "none" }, "un ad que Meta no devolvió no inventa campaña");
     assert.deepEqual(resolveCampanas(importado, ctx), { names: [NO_PAUTA], source: "none" }, "un importado por CSV no toma la campaña de Meta");
 
+    // Con la cadena completa (metaCampaignByOpp, armado en page.tsx con classifyLead),
+    // una oportunidad SIN ad id también lista bajo el nombre de Meta; un importado no.
+    const ctxByOpp = { ...ctx, metaCampaignByOpp: new Map([[soloCampo.id, "Meta Campaña 2"], [importado.id, "Meta Campaña 1"]]) };
+    assert.deepEqual(resolveCampanas(soloCampo, ctxByOpp), { names: ["Meta Campaña 2"], source: "meta" }, "por URL o nombre también se llega a Meta");
+    assert.deepEqual(resolveCampanas(soloCampo, ctx), { names: ["Campo X"], source: "campo" }, "sin el mapa por opp, cae como antes");
+    assert.deepEqual(resolveCampanas(importado, ctxByOpp), { names: [NO_PAUTA], source: "none" }, "un importado tampoco toma el mapa por opp");
+
     // El filtro compara con lo mismo que resolveCampanas.
     const opps = [conMeta, soloPauta, soloCampo, pautaSinNombre, adDesconocido, importado];
     const ids = (xs: Opportunity[]) => xs.map((x) => x.id);
