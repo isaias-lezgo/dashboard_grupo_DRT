@@ -236,8 +236,8 @@ Consequences to keep in mind when building charts:
 - A contact with **no** opportunity belongs to no pipeline, so it can't be scoped to any
   desarrollo — but it is **never silently dropped**. Those contacts are leads that
   nobody has moved into an embudo yet, which is exactly the leak worth watching. **That
-  card does not exist yet** — the only place they surface today is the footnote of
-  "Tareas pendientes por asesor". When it is built, it goes as a **card at the top of the
+  card does not exist yet** — and since "Tareas pendientes por asesor" was unmounted
+  (2026-09-28) they surface nowhere in the UI. When it is built, it goes as a **card at the top of the
   panel** ("Contactos sin oportunidad" — count + drill-down to the list), above the
   GENERAL header and the pipeline-scoped charts, and stays **out** of the chart
   aggregates so the funnel numbers stay honest.
@@ -267,9 +267,13 @@ reintroduce a `sucursalField`-style seam here.
     `stage-funnel-chart.tsx`, see next bullet) and `lost-cross-matrix.tsx`.
   - **Only in the desarrollo tabs**: `leads-per-day-chart.tsx` (mounted 2026-09-17 in a
     two-column grid next to `assignment-funnel-chart.tsx`; in GENERAL the monthly chart
-    stays alone at full width), `stale-opportunity-matrix.tsx` and
-    `task-backlog-chart.tsx` (removed from GENERAL 2026-09-14 at the client's request:
-    GENERAL is the business/funnel view, the advisor watch happens per desarrollo).
+    stays alone at full width) and `stale-opportunity-matrix.tsx` (removed from GENERAL
+    2026-09-14 at the client's request: GENERAL is the business/funnel view, the advisor
+    watch happens per desarrollo).
+  - **Unmounted everywhere 2026-09-28**: `task-backlog-chart.tsx` ("Tareas pendientes por
+    asesor"), at the client's request. **File kept**, and `allTasks` /
+    `unfilteredOpportunities` stay wired into `panel-dashboard.tsx` — to bring it back,
+    mount it again next to the stale matrix, don't rewrite it.
   - **Removed everywhere 2026-09-14**: `opportunity-win-rate-chart.tsx` ("Oportunidades
     creadas y % ganadas", file deleted) and `opportunity-status-chart.tsx` ("Oportunidades
     por estado", **file kept but unmounted** — `buildStatusByMonth` in
@@ -278,7 +282,7 @@ reintroduce a `sucursalField`-style seam here.
 
   The order, top to bottom: [GENERAL header] → `advisor-stage-table.tsx` →
   `assignment-funnel-chart.tsx` [+ `leads-per-day-chart.tsx` beside it, desarrollo tabs
-  only] → `pauta-performance-table.tsx` → [stale matrix → task backlog] → Origen / Canal pair →
+  only] → `pauta-performance-table.tsx` → [stale matrix] → Origen / Canal pair →
   `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
   `assignment-funnel-chart.tsx` ("Leads sin asesor por semana" — **weekly since
   2026-09-17** at the client's request, it was monthly before: the universe is
@@ -333,8 +337,7 @@ reintroduce a `sucursalField`-style seam here.
   column order from the first pipeline with stages, since all six declare the same ones),
   `stale-opportunity-matrix.tsx` ("Oportunidades sin atención": days without a stage change
   × days without an outbound message, over the open opportunities of the live funnel —
-  desarrollo tabs only), `task-backlog-chart.tsx` ("Tareas pendientes por asesor", stacked
-  by due date — desarrollo tabs only), two mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`),
+  desarrollo tabs only), two mounts of `category-breakdown-chart.tsx` (`OrigenDeLeadChart` / `CanalDeContactoChart`),
   `lost-reason-matrix.tsx` ("Motivos de perdido": motivo × categoría, with its own local
   switch between Canal de Contacto and Origen de Lead — that switch is card-local state,
   not a global filter), and `lost-cross-matrix.tsx` (the same lost opportunities crossed
@@ -397,7 +400,8 @@ reintroduce a `sucursalField`-style seam here.
 - **`ChartContainer` (`components/ui/chart.tsx`) already wraps its child in a Recharts `ResponsiveContainer`.** Do not nest another one inside it — the chart still renders, but Recharts logs "width and height are both fixed numbers" on every resize. Charts recovered from `upstream` predate this and do nest one; drop it when you port them.
 - The panel also takes **`dateRange`** (the resolved `ResolvedDateRange | null` from `app/page.tsx`). It exists for charts that measure a date *other than* `createdAt` — nothing mounted uses it today, but keep it wired: it is exactly what a rebuilt close-date chart would need, and re-plumbing it later is the expensive part.
 - **Los dos gráficos de vigilancia de asesoras ignoran el filtro global de fechas**
-  (`stale-opportunity-matrix.tsx`, `task-backlog-chart.tsx`), **y desde 2026-09-14 se montan
+  (`stale-opportunity-matrix.tsx`, `task-backlog-chart.tsx` — este último desmontado desde
+  2026-09-28, ver arriba), **y desde 2026-09-14 se montan
   solo en las pestañas de desarrollo, no en GENERAL** (pedido del cliente). El fetch de
   `conversation-activity` sigue arrancando con la página porque las seis pestañas lo usan. "Sin atención en 60 días" y
   "vencida" son condiciones de HOY, no de un periodo, así que leen `allOpportunities` y la

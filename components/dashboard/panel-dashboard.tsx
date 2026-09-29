@@ -24,7 +24,6 @@ import { AssignmentFunnelChart } from "./assignment-funnel-chart"
 import { LeadsPerDayChart } from "./leads-per-day-chart"
 import { PautaPerformanceTable } from "./pauta-performance-table"
 import { StaleOpportunityMatrix } from "./stale-opportunity-matrix"
-import { TaskBacklogChart } from "./task-backlog-chart"
 import { LostReasonMatrix } from "./lost-reason-matrix"
 import { LostCrossMatrix } from "./lost-cross-matrix"
 import {
@@ -178,26 +177,21 @@ export function PanelDashboard({
           acota las oportunidades, así que en GENERAL compara campañas y dentro
           de un desarrollo compara las campañas de ese desarrollo. */}
       <PautaPerformanceTable {...shared} allAppointments={allAppointments} />
-      {/* Los dos gráficos de vigilancia de asesoras van solo por desarrollo
-          (pedido del cliente, 2026-09-14): en GENERAL la vista es de embudo y
-          negocio, no de operación; la vigilancia se hace en cada desarrollo. */}
+      {/* La vigilancia de asesoras va solo por desarrollo (pedido del cliente,
+          2026-09-14): en GENERAL la vista es de embudo y negocio, no de
+          operación. "Tareas pendientes por asesor" (task-backlog-chart.tsx) ya
+          no se monta (2026-09-28, pedido del cliente); el archivo se conserva
+          y `allTasks` / `unfilteredOpportunities` siguen cableados por si vuelve. */}
       {panel !== "general" && (
-        <>
-          <StaleOpportunityMatrix
-            {...shared}
-            conversationActivity={conversationActivity}
-            activityStatus={activityStatus}
-            activityProgress={activityProgress}
-            activityMeta={activityMeta}
-            activityError={activityError}
-            onRetryActivity={onRetryActivity}
-          />
-          <TaskBacklogChart
-            {...shared}
-            allTasks={allTasks}
-            unfilteredOpportunities={unfilteredOpportunities}
-          />
-        </>
+        <StaleOpportunityMatrix
+          {...shared}
+          conversationActivity={conversationActivity}
+          activityStatus={activityStatus}
+          activityProgress={activityProgress}
+          activityMeta={activityMeta}
+          activityError={activityError}
+          onRetryActivity={onRetryActivity}
+        />
       )}
       <div className="grid gap-5 lg:grid-cols-2">
         <OrigenDeLeadChart {...shared} />
