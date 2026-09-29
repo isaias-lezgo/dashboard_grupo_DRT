@@ -87,6 +87,28 @@ export function normalizeAds(
   return { campaigns: [...campaigns.values()], adsets: [...adsets.values()], ads };
 }
 
+/**
+ * De un `paging.next` de Graph a la ruta y parámetros con que pedir la página
+ * siguiente por el camino normal (que vuelve a poner el token).
+ *
+ * Graph NO respeta la versión de la petición en `next`: se pidió con v23.0 y
+ * el enlace vuelve bajo `/v26.0/`. Quitar solo `/${GRAPH_VERSION}/` dejaba el
+ * prefijo ajeno y la segunda página iba a `v23.0//v26.0/act_…/insights` →
+ * 400 "Unknown path components". Solo pagina quien tiene más de 500 filas de
+ * insights en un mes, así que fallaban exactamente las cuatro cuentas grandes
+ * de DRT y las dos chicas pasaban (medido 2026-09-28: `code_2500` en La
+ * Sierra, Cañadas, Saggita y Átria). Se quita CUALQUIER `/vNN.N/`.
+ */
+export function nextPageRequest(nextUrl: string): { path: string; params: Record<string, string> } {
+  const next = new URL(nextUrl);
+  const params: Record<string, string> = {};
+  next.searchParams.forEach((v, k) => {
+    if (k !== "access_token") params[k] = v;
+  });
+  const path = next.pathname.replace(/^\/v\d+\.\d+\//, "").replace(/^\//, "");
+  return { path, params };
+}
+
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }

@@ -9,6 +9,7 @@ import { GRAPH_VERSION } from "./meta-oauth";
 import {
   monthChunks,
   mergeMetaAds,
+  nextPageRequest,
   normalizeAds,
   normalizeInsightRow,
   type RawAd,
@@ -19,9 +20,12 @@ import type { MetaAdsData, MetaDailyRow } from "./types";
 
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// Códigos de throttling de Graph que vale la pena reintentar. 190 (token
+// Códigos de Graph que vale la pena reintentar: throttling (4, 17, 32, 613,
+// 80004) y los transitorios que Meta documenta como "vuelve a intentar" (1
+// "Unknown error", 2 "Service temporarily unavailable" — Átria cayó con un 2 el
+// 2026-09-28 y sin reintento la cuenta entera se perdía del sync). 190 (token
 // inválido/revocado) NO está aquí a propósito: es terminal.
-const RETRYABLE_CODES = new Set([4, 17, 32, 613, 80004]);
+const RETRYABLE_CODES = new Set([1, 2, 4, 17, 32, 613, 80004]);
 const MAX_ATTEMPTS = 3;
 const ACCOUNT_CONCURRENCY = 2;
 
@@ -96,18 +100,15 @@ async function graphGet<T>(path: string, params: Record<string, string>, token?:
 }
 
 // Sigue `paging.next` hasta agotar. Graph ya incluye el token en `next`; se
-// quita y se vuelve a poner por el camino normal para que nunca haya dos.
+// quita y se vuelve a poner por el camino normal para que nunca haya dos. La
+// versión del enlace tampoco es la nuestra (ver nextPageRequest).
 async function graphGetAll<T>(path: string, params: Record<string, string>, token: string): Promise<T[]> {
   const out: T[] = [];
   let page = await graphGet<{ data: T[]; paging?: { next?: string } }>(path, params, token);
   out.push(...page.data);
   while (page.paging?.next) {
-    const next = new URL(page.paging.next);
-    const nextParams: Record<string, string> = {};
-    next.searchParams.forEach((v, k) => {
-      if (k !== "access_token") nextParams[k] = v;
-    });
-    page = await graphGet(next.pathname.replace(`/${GRAPH_VERSION}/`, ""), nextParams, token);
+    const next = nextPageRequest(page.paging.next);
+    page = await graphGet(next.path, next.params, token);
     out.push(...page.data);
   }
   return out;

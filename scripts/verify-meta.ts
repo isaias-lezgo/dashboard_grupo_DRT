@@ -12,6 +12,7 @@ import {
   monthChunks,
   historyWindow,
   mergeMetaAds,
+  nextPageRequest,
   MAX_HISTORY_MONTHS,
 } from "../lib/meta-normalize";
 
@@ -119,6 +120,20 @@ async function main() {
   assert.equal(merged.daily.length, 2);
   assert.deepEqual(merged.failedAccounts, [{ id: "act_3", reason: "permission" }]);
   assert.deepEqual(merged.window, { since: "2026-01-01", until: "2026-09-13" });
+
+  // --- paging.next: Graph lo devuelve bajo OTRA versión y con el token puesto.
+  // Antes solo se quitaba la versión propia y la segunda página iba a
+  // `v23.0//v26.0/…` → code 2500 en las cuatro cuentas grandes de DRT.
+  const np = nextPageRequest(
+    "https://graph.facebook.com/v26.0/act_520082890601955/insights?level=ad&limit=500&after=MTAw&access_token=SECRET"
+  );
+  assert.equal(np.path, "act_520082890601955/insights");
+  assert.deepEqual(np.params, { level: "ad", limit: "500", after: "MTAw" });
+  assert.equal(
+    nextPageRequest("https://graph.facebook.com/act_1/ads?after=x&access_token=S").path,
+    "act_1/ads",
+    "sin versión en el enlace"
+  );
 
   console.log("✅ verify:meta OK");
 }
