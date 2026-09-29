@@ -33,7 +33,7 @@ import type {
   Pipeline,
 } from "./types";
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
-import { reachedStage, stageIndexOf } from "./desarrollo-funnel";
+import { hadCita, reachedStage, stageIndexOf } from "./desarrollo-funnel";
 import { isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 
@@ -520,3 +520,283 @@ function ratio(num: number, den: number): number | null {
   return den > 0 ? num / den : null;
 }
 
+// ── La agregación de la tarjeta ─────────────────────────────────────────────
+// Una sola función produce TODO lo que "Inversión y rendimiento de pauta"
+// pinta: la fila KPI, las campañas con sus anuncios, y los residuos del pie.
+// Sustituye a buildCostPerStage y buildCampaignPerformance de la entrega ①:
+// dos agregaciones sobre el mismo universo se desincronizan al primer cambio.
+
+export const SIN_CAMPANA = "Sin campaña";
+export const ANUNCIO_ELIMINADO = "Anuncio eliminado";
+
+export interface PautaMetrics {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  cpm: number | null;
+  ctr: number | null;
+  leadsMeta: number;
+  leadsCrm: number;
+  citas: number;
+  visitas: number;
+  ventas: number;
+  cpl: number | null;
+  costPerVenta: number | null;
+  oppIds: { leads: string[]; citas: string[]; visitas: string[]; ventas: string[] };
+}
+
+export interface PautaAdRow {
+  adId: string;
+  name: string;
+  /** URLs con las que entraron sus leads (aprendidas), las más frecuentes primero. */
+  urls: string[];
+  /** Con gasto pero fuera de /ads. */
+  deleted: boolean;
+  metrics: PautaMetrics;
+}
+
+export interface PautaCampaignRow {
+  campaignId: string;
+  name: string;
+  accountId: string;
+  accountName: string;
+  /** La cubeta "Sin campaña": anuncios borrados cuya campaña nadie enseñó. */
+  missing: boolean;
+  metrics: PautaMetrics;
+  /** Leads atados a la campaña sin anuncio (niveles 2-4). Ya están en metrics.leadsCrm. */
+  campaignOnlyLeads: number;
+  ads: PautaAdRow[];
+}
+
+export interface PautaCell {
+  count: number;
+  oppIds: string[];
+}
+
+export interface PautaInvestment {
+  /** "" cuando las cuentas mezclan monedas. */
+  currency: string;
+  mixedCurrency: boolean;
+  kpi: PautaMetrics;
+  /** Por gasto desc; "Sin campaña" siempre al final. */
+  campaigns: PautaCampaignRow[];
+  /** De pauta, sin ninguna llave que pegue. */
+  noAdId: PautaCell;
+  /** Con ad id de una cuenta no conectada. */
+  unknownAd: PautaCell;
+  /** Atados a un anuncio o campaña de una cuenta que no es la de esta pestaña. */
+  otherAccount: PautaCell;
+  notPauta: number;
+  /** Cuántos leads CRM entraron por cada nivel. */
+  via: Record<AttributionVia, number>;
+  /** Gasto de "Sin campaña". */
+  unlinkedSpend: number;
+}
+
+export interface PautaInvestmentInput {
+  /** La cohorte: oportunidades ya acotadas a pestaña, filtros y fecha (createdAt). */
+  opportunities: Opportunity[];
+  /** Filas diarias ya acotadas a la pestaña (scopeMetaDaily); el rango se aplica aquí. */
+  daily: MetaDailyRow[];
+  /** YYYY-MM-DD inclusivo, en la zona horaria del panel; null = toda la ventana. */
+  range: { start: string; end: string } | null;
+  ctx: AttributionContext;
+  /** contactIds con cita en el objeto Citas, sin filtrar por fecha. */
+  contactsWithCita: ReadonlySet<string>;
+  /** Cuentas de ESTA pestaña; null en GENERAL = todas. */
+  accountIds: ReadonlySet<string> | null;
+}
+
+const VISITA = { key: "visita", minIndex: 5 };
+const VENTA = { key: "venta", minIndex: 8 };
+
+function emptyMetrics(): PautaMetrics {
+  return {
+    spend: 0, impressions: 0, clicks: 0, cpm: null, ctr: null,
+    leadsMeta: 0, leadsCrm: 0, citas: 0, visitas: 0, ventas: 0, cpl: null, costPerVenta: null,
+    oppIds: { leads: [], citas: [], visitas: [], ventas: [] },
+  };
+}
+
+function addDaily(m: PautaMetrics, d: MetaDailyRow) {
+  m.spend += d.spend;
+  m.impressions += d.impressions;
+  m.clicks += d.clicks;
+  m.leadsMeta += d.leadsForm + d.leadsMsg;
+}
+
+function addLead(m: PautaMetrics, o: Opportunity, contactsWithCita: ReadonlySet<string>) {
+  m.leadsCrm++;
+  m.oppIds.leads.push(o.id);
+  if (hadCita(o, contactsWithCita)) {
+    m.citas++;
+    m.oppIds.citas.push(o.id);
+  }
+  // Visita: ≥05 o ganada — el embudo es monótono, como en "Visitas por desarrollo".
+  if (reachedStage(o, VISITA) || reachedStage(o, VENTA)) {
+    m.visitas++;
+    m.oppIds.visitas.push(o.id);
+  }
+  if (reachedStage(o, VENTA)) {
+    m.ventas++;
+    m.oppIds.ventas.push(o.id);
+  }
+}
+
+// `costs` apaga CPL y costo por venta: solo el KPI global lo hace, cuando las
+// cuentas mezclan monedas. Una campaña o un anuncio viven en UNA cuenta, así
+// que sus costos siempre valen.
+function finishMetrics(m: PautaMetrics, costs: boolean) {
+  m.cpm = m.impressions > 0 ? (m.spend / m.impressions) * 1000 : null;
+  m.ctr = ratio(m.clicks, m.impressions);
+  m.cpl = costs && m.spend > 0 ? ratio(m.spend, m.leadsCrm) : null;
+  m.costPerVenta = costs && m.spend > 0 ? ratio(m.spend, m.ventas) : null;
+}
+
+function accountOfAd(ctx: AttributionContext, adId: string): string | null {
+  return (
+    ctx.index.byAd.get(adId)?.account?.id ??
+    ctx.index.dailyByAd.get(adId)?.find((r) => r.accountId)?.accountId ??
+    null
+  );
+}
+
+const OPP_KEYS = ["leads", "citas", "visitas", "ventas"] as const;
+
+function foldInto(target: PautaMetrics, src: PautaMetrics) {
+  target.spend += src.spend;
+  target.impressions += src.impressions;
+  target.clicks += src.clicks;
+  target.leadsMeta += src.leadsMeta;
+  target.leadsCrm += src.leadsCrm;
+  target.citas += src.citas;
+  target.visitas += src.visitas;
+  target.ventas += src.ventas;
+  for (const k of OPP_KEYS) target.oppIds[k].push(...src.oppIds[k]);
+}
+
+export function buildPautaInvestment(p: PautaInvestmentInput): PautaInvestment {
+  const { ctx } = p;
+  const rows = new Map<string, PautaCampaignRow>();
+  const adRows = new Map<string, PautaAdRow>();
+  const urlCounts = new Map<string, Map<string, number>>();
+
+  const campaignRow = (campaignId: string | null, accountId: string | null): PautaCampaignRow => {
+    const key = campaignId ?? "";
+    let r = rows.get(key);
+    if (r) return r;
+    const c = campaignId ? ctx.index.campaignsById.get(campaignId) : undefined;
+    const acc = c?.accountId ?? accountId ?? "";
+    r = {
+      campaignId: key,
+      name: c?.name ?? (campaignId ? campaignId : SIN_CAMPANA),
+      accountId: acc,
+      accountName: ctx.index.accountsById.get(acc)?.name?.trim() ?? "",
+      missing: !campaignId,
+      metrics: emptyMetrics(),
+      campaignOnlyLeads: 0,
+      ads: [],
+    };
+    rows.set(key, r);
+    return r;
+  };
+  const adRow = (adId: string): PautaAdRow => {
+    let a = adRows.get(adId);
+    if (a) return a;
+    const entry = ctx.index.byAd.get(adId);
+    a = {
+      adId,
+      name: entry ? entry.ad.name : ANUNCIO_ELIMINADO,
+      urls: [],
+      deleted: !entry,
+      metrics: emptyMetrics(),
+    };
+    adRows.set(adId, a);
+    const campaignId = entry?.campaign?.id ?? ctx.learned?.campaignOfDeletedAd.get(adId) ?? null;
+    campaignRow(campaignId, accountOfAd(ctx, adId)).ads.push(a);
+    return a;
+  };
+
+  // Gasto: solo el rango; cada fila va a su anuncio y a su campaña.
+  const currencies = new Set<string>();
+  for (const d of p.daily) {
+    if (!inRange(d.date, p.range)) continue;
+    const a = adRow(d.adId);
+    addDaily(a.metrics, d);
+    const acc = accountOfAd(ctx, d.adId);
+    if (acc) currencies.add(ctx.index.accountsById.get(acc)?.currency ?? "");
+  }
+  const mixedCurrency = currencies.size > 1;
+  const currency = mixedCurrency ? "" : ([...currencies][0] ?? "");
+
+  // Leads: la cohorte ya viene cortada; aquí solo se clasifica y se reparte.
+  const via: Record<AttributionVia, number> = { adId: 0, campaignId: 0, url: 0, name: 0 };
+  const noAdId: PautaCell = { count: 0, oppIds: [] };
+  const unknownAd: PautaCell = { count: 0, oppIds: [] };
+  const otherAccount: PautaCell = { count: 0, oppIds: [] };
+  let notPauta = 0;
+  const inScope = (accountId: string | null) => p.accountIds === null || (!!accountId && p.accountIds.has(accountId));
+
+  for (const o of p.opportunities) {
+    const a = classifyLead(o, ctx);
+    if (a.kind === "notPauta") {
+      notPauta++;
+      continue;
+    }
+    if (a.kind === "noAdId") {
+      noAdId.count++;
+      noAdId.oppIds.push(o.id);
+      continue;
+    }
+    if (a.kind === "unknownAd") {
+      unknownAd.count++;
+      unknownAd.oppIds.push(o.id);
+      continue;
+    }
+    const accountId =
+      a.kind === "ad" ? accountOfAd(ctx, a.adId) : (ctx.index.campaignsById.get(a.campaignId)?.accountId ?? null);
+    if (!inScope(accountId)) {
+      otherAccount.count++;
+      otherAccount.oppIds.push(o.id);
+      continue;
+    }
+    via[a.via]++;
+    if (a.kind === "ad") {
+      const ad = adRow(a.adId);
+      addLead(ad.metrics, o, p.contactsWithCita);
+      for (const u of urlCandidates(o, ctx.contactById)) {
+        const m = urlCounts.get(a.adId) ?? new Map<string, number>();
+        m.set(u, (m.get(u) ?? 0) + 1);
+        urlCounts.set(a.adId, m);
+      }
+    } else {
+      const r = campaignRow(a.campaignId, accountId);
+      r.campaignOnlyLeads++;
+      addLead(r.metrics, o, p.contactsWithCita);
+    }
+  }
+
+  // Cerrar: los anuncios suman a su campaña; la campaña suma al KPI.
+  const kpi = emptyMetrics();
+  for (const r of rows.values()) {
+    for (const ad of r.ads) {
+      ad.urls = [...(urlCounts.get(ad.adId) ?? new Map<string, number>()).entries()]
+        .sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+        .map(([u]) => u);
+      finishMetrics(ad.metrics, true);
+      foldInto(r.metrics, ad.metrics);
+    }
+    r.ads.sort((x, y) => y.metrics.spend - x.metrics.spend || y.metrics.leadsCrm - x.metrics.leadsCrm || x.adId.localeCompare(y.adId));
+    finishMetrics(r.metrics, true);
+    foldInto(kpi, r.metrics);
+  }
+  finishMetrics(kpi, !mixedCurrency);
+
+  const campaigns = [...rows.values()].sort((x, y) => {
+    if (x.missing !== y.missing) return x.missing ? 1 : -1;
+    return y.metrics.spend - x.metrics.spend || y.metrics.leadsCrm - x.metrics.leadsCrm || x.name.localeCompare(y.name, "es");
+  });
+  const unlinkedSpend = rows.get("")?.metrics.spend ?? 0;
+
+  return { currency, mixedCurrency, kpi, campaigns, noAdId, unknownAd, otherAccount, notPauta, via, unlinkedSpend };
+}

@@ -25,6 +25,9 @@ import {
   stageIndexOf,
   reachedStage,
   STAGE_TARGETS,
+  buildPautaInvestment,
+  SIN_CAMPANA,
+  ANUNCIO_ELIMINADO,
   type AttributionContext,
 } from "../lib/meta-attribution";
 import { buildPautaNamesByContact } from "../lib/pauta-performance";
@@ -321,6 +324,108 @@ async function main() {
   assert.equal(reachedStage(opp({ id: "x", stage: "02. Lead en Seguimiento", status: "won" }), venta), true, "status won cuenta como Venta aunque la etapa no");
   assert.equal(reachedStage(opp({ id: "x", stage: "Negocio perdido" }), visita), false);
 
+
+  // --- la agregación de la tarjeta, agosto, GENERAL (todas las cuentas)
+  const contactsWithCita = new Set<string>(["c-8"]);
+  const cohort = [
+    opp({ id: "1", adId: "101", attributionUrl: "https://fb.me/UNO" }),                // ad 101, recibido; entró por la URL UNO
+    opp({ id: "2", adId: "101", stage: "05. Visita al Desarrollo" }),                  // visita
+    opp({ id: "3", adId: "101", stage: "08. Venta", status: "won" }),                  // venta
+    opp({ id: "4", adId: "102", stage: "04. Cita Programada", status: "lost" }),       // cita (perdida)
+    opp({ id: "5", attributionUrl: "https://fb.me/UNO" }),                             // campaña c1 por URL, sin anuncio
+    opp({ id: "6", adId: "201" }),                                                     // ad 201 (c2)
+    opp({ id: "7", adId: "777" }),                                                     // anuncio borrado, campaña c1
+    opp({ id: "8", source: "Pauta Formulario", contactId: "c-8" }),                    // de pauta sin llave, con cita en el objeto Citas
+    opp({ id: "9", adId: "9999" }),                                                    // ad no conectado
+    opp({ id: "r", source: "Referido" }),                                              // no es pauta
+    opp({ id: "csv", attributionMedium: "csv_import", adId: "101" }),                  // importado
+  ];
+  const range = { start: "2026-08-01", end: "2026-08-31" };
+  const inv = buildPautaInvestment({ opportunities: cohort, daily: meta.daily, range, ctx, contactsWithCita, accountIds: null });
+  assert.equal(inv.mixedCurrency, true, "act_2 es USD");
+  assert.equal(inv.currency, "");
+  // gasto de agosto: 101 (100+100) + 201 (50) + 301 (30) + 401 (40) + 777 (70) = 390; el 999 de septiembre queda fuera
+  assert.equal(inv.kpi.spend, 390);
+  assert.equal(inv.kpi.impressions, 3900);
+  assert.equal(inv.kpi.leadsMeta, 4 + 2 + 1 + 0 + 1 + 1, "form + msg de las filas de agosto");
+  assert.equal(inv.kpi.leadsCrm, 7, "1,2,3,4 (101/102) + 5 (c1 por URL) + 6 (201) + 7 (777)");
+  assert.equal(inv.kpi.citas, 3, "2 (05), 3 (venta), 4 (04) — la 8 no está atada a nada");
+  assert.equal(inv.kpi.visitas, 2, "2 y 3");
+  assert.equal(inv.kpi.ventas, 1);
+  assert.equal(inv.kpi.cpl, null, "moneda mixta: sin costos consolidados");
+  assert.deepEqual(inv.kpi.oppIds.ventas, ["3"]);
+  assert.equal(inv.noAdId.count, 1); assert.deepEqual(inv.noAdId.oppIds, ["8"]);
+  assert.equal(inv.unknownAd.count, 1); assert.deepEqual(inv.unknownAd.oppIds, ["9"]);
+  assert.equal(inv.otherAccount.count, 0, "en GENERAL no hay 'otra cuenta'");
+  assert.equal(inv.notPauta, 2);
+  assert.deepEqual(inv.via, { adId: 6, campaignId: 0, url: 1, name: 0 });
+  assert.equal(inv.unlinkedSpend, 0, "el borrado 777 sí tiene campaña aprendida");
+
+  // filas por gasto desc: c1 (270 = 200 + 70 del borrado), c2 (50), c4 (40), c3 (30)
+  assert.deepEqual(inv.campaigns.map((c) => c.campaignId), ["c1", "c2", "c4", "c3"]);
+  const rc1 = inv.campaigns[0];
+  assert.equal(rc1.name, "IW - Cañadas - Agosto");
+  assert.equal(rc1.accountName, "Uno");
+  assert.equal(rc1.metrics.spend, 270);
+  assert.equal(rc1.metrics.leadsCrm, 6, "1,2,3,4,7 por anuncio + 5 por campaña");
+  assert.equal(rc1.campaignOnlyLeads, 1, "la 5");
+  assert.equal(rc1.metrics.cpl, 270 / 6, "una campaña vive en UNA cuenta: su costo sí existe aunque el KPI global esté mixto");
+  assert.equal(rc1.metrics.costPerVenta, 270);
+  assert.equal(rc1.metrics.cpm, (270 / 2700) * 1000);
+  assert.deepEqual(rc1.ads.map((a) => a.adId), ["101", "777", "102"], "anuncios por gasto desc; 102 sin gasto al final");
+  assert.equal(rc1.ads[0].metrics.leadsCrm, 3);
+  assert.deepEqual(rc1.ads[0].urls, ["https://fb.me/UNO"], "URLs con las que entraron los leads de ese anuncio");
+  assert.equal(rc1.ads[1].deleted, true);
+  assert.equal(rc1.ads[1].name, ANUNCIO_ELIMINADO);
+  assert.equal(rc1.ads[1].metrics.leadsCrm, 1);
+  assert.equal(rc1.ads[2].metrics.spend, 0);
+  assert.equal(rc1.ads[2].metrics.leadsCrm, 1, "la 4");
+  assert.equal(rc1.ads[2].metrics.cpl, null, "sin gasto no hay CPL, ni cero");
+  const rc3 = inv.campaigns[3];
+  assert.equal(rc3.metrics.leadsCrm, 0);
+  assert.equal(rc3.metrics.cpl, null, "gasto sin leads: null, la UI lo pinta en rojizo");
+  assert.equal(inv.campaigns.some((c) => c.missing), false);
+
+  // --- una sola moneda y una sola cuenta (pestaña Cañadas = act_1): costos sí, y "otra cuenta" al pie
+  const invCan = buildPautaInvestment({
+    opportunities: cohort,
+    daily: meta.daily.filter((d) => d.accountId === "act_1"),
+    range, ctx, contactsWithCita,
+    accountIds: new Set(["act_1"]),
+  });
+  assert.equal(invCan.mixedCurrency, false);
+  assert.equal(invCan.currency, "MXN");
+  assert.equal(invCan.kpi.spend, 320, "101 + 201 + 777");
+  assert.equal(invCan.kpi.leadsCrm, 7, "todas son de act_1 (c1, c2)");
+  assert.equal(invCan.kpi.cpl, 320 / 7);
+  assert.equal(invCan.kpi.costPerVenta, 320);
+  assert.equal(invCan.otherAccount.count, 0);
+  const invPal = buildPautaInvestment({
+    opportunities: cohort,
+    daily: meta.daily.filter((d) => d.accountId === "act_3"),
+    range, ctx, contactsWithCita,
+    accountIds: new Set(["act_3"]),
+  });
+  assert.equal(invPal.kpi.spend, 40);
+  assert.equal(invPal.kpi.leadsCrm, 0, "ningún lead de la cohorte es de un anuncio de act_3");
+  assert.equal(invPal.otherAccount.count, 7, "los 7 atados a c1/c2 son de otra cuenta");
+  assert.deepEqual(invPal.campaigns.map((c) => c.campaignId), ["c4"]);
+  assert.equal(invPal.kpi.cpl, null);
+
+  // --- un anuncio borrado SIN campaña aprendida cae en "Sin campaña", al final y marcado
+  const orphanDaily = [...meta.daily, { adId: "888", accountId: "act_1", date: "2026-08-05", spend: 5, impressions: 50, reach: 50, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 }];
+  const invOrphan = buildPautaInvestment({ opportunities: [], daily: orphanDaily, range, ctx, contactsWithCita, accountIds: null });
+  const last = invOrphan.campaigns[invOrphan.campaigns.length - 1];
+  assert.equal(last.campaignId, "");
+  assert.equal(last.name, SIN_CAMPANA);
+  assert.equal(last.missing, true);
+  assert.equal(last.metrics.spend, 5);
+  assert.equal(invOrphan.unlinkedSpend, 5);
+  assert.deepEqual(last.ads.map((a) => a.adId), ["888"]);
+
+  // --- sin rango = toda la ventana
+  const invAll = buildPautaInvestment({ opportunities: cohort, daily: meta.daily, range: null, ctx, contactsWithCita, accountIds: null });
+  assert.equal(invAll.kpi.spend, 390 + 999);
 
   console.log("✅ verify:meta-attribution OK");
 }
