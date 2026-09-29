@@ -24,7 +24,7 @@ import { CanalDeContactoChart, OrigenDeLeadChart } from "./category-breakdown-ch
 import { AdvisorStageTable } from "./advisor-stage-table"
 import { AssignmentFunnelChart } from "./assignment-funnel-chart"
 import { LeadsPerDayChart } from "./leads-per-day-chart"
-import { PautaPerformanceTable } from "./pauta-performance-table"
+import { PautaInvestmentCard } from "./pauta-investment-card"
 import { StaleOpportunityMatrix } from "./stale-opportunity-matrix"
 import { LostReasonMatrix } from "./lost-reason-matrix"
 import { LostCrossMatrix } from "./lost-cross-matrix"
@@ -184,11 +184,19 @@ export function PanelDashboard({
           <LeadsPerDayChart {...shared} />
         </div>
       )}
-      {/* Qué pauta trae los leads que llegan a cita y a venta. En las siete
-          pestañas: la Pauta se resuelve por contacto y el embudo de la pestaña
-          acota las oportunidades, así que en GENERAL compara campañas y dentro
-          de un desarrollo compara las campañas de ese desarrollo. */}
-      <PautaPerformanceTable {...shared} allAppointments={allAppointments} />
+      {/* Inversión y rendimiento de pauta: el gasto de Meta cruzado con los
+          leads del CRM por campaña → anuncio, con los nombres de Meta. En las
+          siete pestañas: por desarrollo el gasto es el de SU cuenta publicitaria.
+          Reemplaza a "Rendimiento por pauta" (pauta-performance-table.tsx, que
+          se conserva desmontado) desde 2026-09-28, pedido del cliente. */}
+      <PautaInvestmentCard
+        {...shared}
+        allAppointments={allAppointments}
+        dateRange={dateRange}
+        metaPanel={metaPanel}
+        metaWarning={metaWarning}
+        locationCreatedAt={locationCreatedAt}
+      />
       {/* La vigilancia de asesoras va solo por desarrollo (pedido del cliente,
           2026-09-14): en GENERAL la vista es de embudo y negocio, no de
           operación. "Tareas pendientes por asesor" (task-backlog-chart.tsx) ya
