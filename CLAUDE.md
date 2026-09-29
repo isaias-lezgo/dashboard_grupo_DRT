@@ -101,8 +101,8 @@ pnpm verify:activity-cache # lib/activity-cache.ts — completa vs. incremental,
 pnpm verify:sync-store   # lib/sync-store.ts — gzip roundtrip, aislamiento por cliente, el candado
 pnpm verify:meta-oauth   # lib/meta-oauth.ts — state firmado, cifrado del token, URL del diálogo
 pnpm verify:meta-connection-store # lib/meta-connection-store.ts — fila por (cliente, producto); usa la base si hay DATABASE_URL
-pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ventana de historia
-pnpm verify:meta-attribution # lib/meta-attribution.ts — llave por ad id, desarrollo por ad, costo por etapa
+pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ventana desde la subcuenta, paging.next, filtro de anuncios
+pnpm verify:meta-attribution # lib/meta-attribution.ts — cadena de cuatro niveles, URL aprendida, cuenta = desarrollo, buildPautaInvestment
 pnpm verify:leads-per-day # lib/leads-per-day.ts — frontera de día en CDMX, relleno de huecos, fila "Sin fecha"
 pnpm verify:pauta-performance # lib/pauta-performance.ts — join Pauta → contacto → oportunidad → cita, doble conteo vs. totales
 npx tsc --noEmit         # REQUIRED: next build ignores TS errors, so a green build proves nothing
@@ -202,23 +202,27 @@ you find yourself copying it again, parameterize instead.)
 
 All six pipelines live in the **same** GHL sub-account (`LbjglJfbiUWjKpmxSnvm`, "Grupo
 DRT"), so the main sync fetches them together and the split is client-side. The stage
-names are **identical across all six**:
+names are **identical across all six**. **GHL renamed them in September 2026** (measured
+2026-09-28); today they are:
 
 ```
-00. Recibido → 01. Contactado → 02. Lead en Seguimiento → 03. Lead Calificado
-→ 04. Cita Programada → 05. Visita al Desarrollo → 06. Negociación
-→ 07. Apartado → 08. Venta
+01. Recibido → 02. Seguimiento → 03. Cita → 04. Visita → 05. Apartado → 06. Venta
+→ 07. Perdido
 ```
 
-plus two side buckets: **Inversión Futura** and **Negocio perdido** (spelled
-`Negocio Perdido` in La Sierra, Palmyra and Zanda — hence the rule below).
+Before that they were `00. Recibido → 01. Contactado → 02. Lead en Seguimiento →
+03. Lead Calificado → 04. Cita Programada → 05. Visita al Desarrollo → 06. Negociación
+→ 07. Apartado → 08. Venta` plus the side buckets `Inversión Futura` and `Negocio
+perdido`. Both sets appear in the verify fixtures on purpose.
 
 Match stages **by name, case-insensitively** — never by stage id — the same rule
-`isWonOpp()` already follows.
-
-Two stages sit at **zero** in every pipeline today (`03. Lead Calificado`,
-`06. Negociación`). They are not dead code to delete: they are stages the operation
-skips, and a funnel chart that shows them empty is telling the client something true.
+`isWonOpp()` already follows. **"Reached the stage" is read from the stage's WORD, never
+from its numeric prefix** (`stageRungOf` in `lib/desarrollo-funnel.ts`: perdido/abandon
+→ no rung, venta → 8, apartado → 7, negociación → 6, visita → 5, cita → 4, calificado →
+3, seguimiento → 2, contactado → 1, recibido → 0; the number is only the fallback for a
+stage with no known word). The rename is why: with the old `≥ 05` rule, **"07. Perdido"
+counted as a visit and a deposit** across the whole panel. A lost-named stage says
+nothing about how far the lead got, so it reaches no step.
 
 **GENERAL is deliberately "all opportunities", not "the six desarrollos we know about."**
 When DRT opens a seventh development, its leads reach GENERAL and the desarrollo filter
@@ -282,7 +286,7 @@ reintroduce a `sucursalField`-style seam here.
 
   The order, top to bottom: [GENERAL header] → `advisor-stage-table.tsx` →
   `assignment-funnel-chart.tsx` [+ `leads-per-day-chart.tsx` beside it, desarrollo tabs
-  only] → `pauta-performance-table.tsx` → [stale matrix] → Origen / Canal pair →
+  only] → `pauta-investment-card.tsx` → [stale matrix] → Origen / Canal pair →
   `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
   `assignment-funnel-chart.tsx` ("Leads sin asesor por semana" — **weekly since
   2026-09-17** at the client's request, it was monthly before: the universe is
@@ -300,33 +304,27 @@ reintroduce a `sucursalField`-style seam here.
   share a row: what came in each day next to how much of it nobody took. It respects the
   global date filter exactly — with "Todo" it draws the whole history as a dense
   histogram, by the client's choice, rather than clamping to a recent window),
-  `pauta-performance-table.tsx` ("Rendimiento por pauta", every tab, added 2026-09-17:
-  one row per **Pauta name** with Leads recibidos / Citas / Ventas / Perdidos. **The
-  unit is the opportunity and the link is the contact**: the Pauta object carries no
-  opportunity, so an opportunity lands in the row of its contact's Pauta(s), resolved
-  over `allPautas` (unfiltered — the record may predate the date window). **Inside a
-  desarrollo tab only the contact's Pautas whose `properties.desarrollo` is that
-  pipeline's name count** (populated 100%, values are exactly the pipeline names,
-  compared with `normalizeDesarrolloName`): without that cut, a contact who came in
-  through a Cañadas pauta and later opened an Atria opportunity put "Cañadas by El
-  Mirador" in Atria's table — true, but unreadable (client caught it 2026-09-17).
-  Opportunities whose Pautas are all of another desarrollo go to `otroDesarrollo`
-  (footnote + drill, not a row): 9 in Atria, 109 of 156 in Palmyra. GENERAL passes
-  `null` and keeps every Pauta. Citas is the
-  GENERAL funnel's union (`≥04` ∪ won ∪ a row in the Citas object, `allAppointments`);
-  Ventas is `isWonOpp`; Perdidos is `lost`/`abandoned`. **A contact who entered through
-  two pautas counts in both rows** — 18% of Pauta contacts do, measured 2026-09-17 —
-  while the Total row counts each opportunity once; the footnote states the overlap and
-  how many opportunities have no Pauta at all (those stay out of the table, with a
-  drill link, rather than becoming a row). "Sin nombre" is pinned last in
-  `MISSING_TEXT`. Collapses to 12 rows with "Ver N más". The **ID Pauta** column is
-  the ad id via `oppAdId()` and is **one-to-many per name** — the name is the
-  form/campaign, the id is the ad; "Cañadas by El Mirador" runs under 98 ids — so the
-  cell shows the id with the most leads plus "+N", and the hover lists the top ten. A
-  **card-local toggle "Por nombre / Por ID"** (not a global filter) regroups the rows
-  by ad id: same universe and same Total row, but each opportunity falls in exactly one
-  row (`multiPauta` is 0), the Nombre Pauta column becomes the related one, and the
-  sentinel is "Sin id"),
+  `pauta-investment-card.tsx` ("Inversión y rendimiento de pauta", every tab, added
+  2026-09-28, **replacing** `pauta-performance-table.tsx` — file and
+  `lib/pauta-performance.ts` kept, unmounted, at the client's request; `hadCita` and
+  `buildPautaNamesByContact` moved out of that module into `lib/desarrollo-funnel.ts`
+  and `lib/pauta.ts` so `meta-attribution.ts` can import them without a cycle, and are
+  re-exported from where they were). Spec:
+  `docs/superpowers/specs/2026-09-28-inversion-y-rendimiento-de-pauta-design.md`. KPI
+  row (Gasto · Leads CRM with "Meta reportó N" · CPL · Citas · Visitas · Ventas · Costo
+  por venta) plus impressions/clicks/CPM/CTR, and a campaign → ad table with **Meta's
+  campaign names**, ad ids, the URLs leads came in through, Top 15 by spend, search, and
+  a drill on every CRM cell. **Everything is computed by `buildPautaInvestment`**
+  (`lib/meta-attribution.ts`); the component (`pauta-investment-card.tsx` +
+  `-kpis.tsx` + `-table.tsx`) only scopes and draws. Leads are the creation cohort of
+  the tab (already date-filtered upstream); spend is the same date range over the tab's
+  **ad accounts** (each account is a desarrollo, `accountToPipeline`). The other global
+  filters narrow leads only, never spend. Sentinels: "Sin campaña" (deleted ads whose
+  campaign nobody taught), "Anuncio eliminado" (spend for an ad no longer in `/ads`),
+  both in `MISSING_TEXT`. Footnote: leads per attribution level, unlinkable pauta
+  leads, ad ids from unconnected accounts, leads from another account's ads. The Meta
+  context (`buildMetaPanelContext`) is memoized **once in `app/page.tsx`** and passed
+  down as `metaPanel`, with `metaWarning` and `locationCreatedAt`),
   `advisor-stage-table.tsx` (asesor × etapa, with a stacked status bar per row; shading is
   normalized **per column** and the "Sin asesor" row stays outside that normalization and
   outside the tint, because it is an order of magnitude larger. **In GENERAL the row is the
@@ -349,11 +347,13 @@ reintroduce a `sucursalField`-style seam here.
   `stage-funnel-chart.tsx` (el embudo de seis pasos de la estrategia: leads → precalificados
   `≥02` → citas `≥04` → visitas `≥05` → apartados `≥07` → ventas `isWonOpp`). Solo en GENERAL,
   como el cruce de perdidas. Reglas que no hay que "arreglar":
-  - **"Alcanzó la etapa" es el prefijo numérico de la etapa ACTUAL** (`stageIndexOf` /
-    `reachedStage`, ahora en `lib/desarrollo-funnel.ts`; `meta-attribution.ts` las importa de
-    ahí). Una perdida en `05.` sí visitó. **Venta es `isWonOpp()` y nada más** — una perdida
-    sentada en `08. Venta` no es venta cerrada, aunque el prefijo diga que sí.
-  - **"Citas agendadas" es una UNIÓN**: etapa `≥04` **o** el contacto tiene una cita en el
+  - **"Alcanzó la etapa" se lee de la PALABRA de la etapa ACTUAL, no de su número**
+    (`stageRungOf` / `reachedStage` en `lib/desarrollo-funnel.ts`; `meta-attribution.ts` las
+    importa de ahí). Una perdida en `Visita` sí visitó; una en la etapa `Perdido` no alcanzó
+    nada. **Venta es `isWonOpp()` y nada más** — una perdida sentada en `Venta` no es venta
+    cerrada, aunque el nombre diga que sí. (Hasta 2026-09-28 era por prefijo numérico; el
+    renombre de etapas en GHL lo rompió, ver "Panel scope".)
+  - **"Citas agendadas" es una UNIÓN**: etapa `Cita` o posterior **o** el contacto tiene una cita en el
     objeto Citas del CRM (`allAppointments`, sin filtrar por fecha, cualquier estatus). El ⓘ
     de esa fila desglosa cuánto aportó cada fuente (medido 2026-09-14: 284 por etapa, 30
     solo por cita). Pedido explícito del cliente; no lo reduzcas a una sola señal.
@@ -564,17 +564,27 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
 
 - **La llave es el ad id.** Cada oportunidad de pauta trae `utmAdId` (→ `opp.adId`) y el
   custom field **`ID Pauta`** (así se llama el poblado; `ID de Pauta` existe casi vacío),
-  que es el id del anuncio en la Marketing API tal cual. `oppAdId()` en
-  `lib/meta-attribution.ts` es la única función que lo lee (attribution nativa manda; el
-  custom field es el fallback); nunca cruces por nombre cuando hay id.
-- **Tres niveles de atribución de un lead, nunca mezclados** (`classifyLead`): `exact`
-  por ad id; `byName` cuando no hay id pero el nombre del ad (`Nombre Pauta` de la opp o
-  `nombre_de_la_pauta` del registro Pauta del contacto) vive en UNA sola campaña de Meta;
-  `noAdId` si es de pauta y no hay nada; `notPauta` para orgánicos, referidos e
-  **importados por CSV** (`attributions[].medium === "csv_import"`, que gana incluso con
-  ad id). Solo los dos primeros entran al costo. Medido 2026-09-13 sobre 14,280
-  oportunidades: 63 % con ad id; el objeto Pauta no trae ad id pero sí
-  `nombre_de_la_pauta` (94 %), `desarrollo` y `formulario` al 100 %.
+  que es el id del anuncio en la Marketing API tal cual. `oppAdId()` es la lectura corta
+  (attribution nativa, luego el custom field); `adIdCandidates()` es la completa (opp →
+  custom fields de la opp → del contacto → cualquier `attributions[].utmAdId`, first
+  antes que last), y es la que usa la cadena.
+- **La cadena de vínculos tiene cuatro niveles, cada uno solo si el anterior no dio
+  nada, nunca sumados** (`classifyLead`, 2026-09-28): **1** ad id (`adIdCandidates`) →
+  **2** `utmCampaignId` de la attribution → **3** la URL de entrada (`URL Pauta`,
+  `attributionUrl`, `attributions[].url`; solo `http(s)://` con ruta — Make escribe `-`
+  y nombres de anuncio en ese campo) contra el mapa **URL → anuncio aprendido** de las
+  oportunidades que traen URL y ad id (`buildLearnedIndex`, sobre el set sin filtrar;
+  una URL vista con un ad id que Meta no conoce queda marcada `foreign` y no identifica
+  nada; una URL de varios anuncios de una misma campaña resuelve a campaña) → **4**
+  nombres (`Nombre Pauta`, `Pauta`, `adName`, `utmCampaign`, objeto Pauta) contra el
+  nombre de UNA campaña o de UN anuncio. Resuelve a `ad` o a `campaign` con `via`;
+  centinelas `unknownAd` (ad id de cuenta no conectada — **y con un ad id propio
+  desconocido los niveles 3-4 no corren**: es un anuncio ajeno, no un hueco), `noAdId`
+  (de pauta sin llave) y `notPauta` (orgánico, referido, `csv_import` — gana incluso con
+  ad id). Medido 2026-09-28 con cinco cuentas: 70.9 % de las no importadas resuelven por
+  ad id; 3 740 de 3 782 `utmCampaignId` coinciden con la campaña del anuncio. Sin el
+  candado de `foreign`, `-` ataba 578 leads y `fb.me/9g0MEa8TO` 131 leads de Cañadas a
+  anuncios de Palmyra.
 - **La conexión es un botón** (`meta-connection.tsx` → `app/api/meta/*`): OAuth de
   Facebook Login for Business con configuración de **usuario del sistema**, así que el
   token no caduca y lo que se conecta es la empresa del cliente. El token vive cifrado
@@ -586,33 +596,51 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   cookie `meta_oauth`** que dejó `/connect`: sin ella, quien conozca la contraseña del
   panel podría iniciar el flujo con su propio Meta y fijarle al cliente una conexión
   ajena. `verify:meta-oauth` asserta el state; la cookie se prueba a mano.
-- **`metaAds` es un dataset más del sync** (`lib/sync.ts`, paso `meta`), que corre
-  DESPUÉS del transform de `opportunities` porque la ventana de historia sale de la
-  oportunidad más antigua con ad id. Cae en el caché de Neon como todo. **Sin conexión el
+- **`metaAds` es un dataset más del sync** (`lib/sync.ts`, paso `meta`), que espera a
+  que `/locations` resuelva porque la ventana se ancla en el `dateAdded` de la
+  subcuenta. Cae en el caché de Neon como todo. **Sin conexión el
   paso no se emite y `metaAds` es `null`** — no es un error ni levanta banner; la fila de
   la pantalla de carga solo aparece cuando el paso existe. Con token revocado (código
   190) el paso es `error` con `reason: "token_revoked"`; si `DASHBOARD_AUTH_SECRET` rota,
   el token deja de descifrar y el paso reporta `error` / `token_unreadable` (no calla).
   En ambos casos la ruta rescata el `metaAds` del último caché bueno (`preserveMetaAds`)
   para no borrar el gasto en pantalla, y el banner pide reconectar.
-- **Cada sync re-trae la ventana completa** (desde el mes de la opp más vieja con ad id,
-  tope 24 meses, por meses calendario). Sin merge incremental: Meta corrige cifras hacia
-  atrás y el caché no guarda historia.
+- **La ventana de gasto arranca en la creación de la subcuenta** (`dateAdded` de
+  `/locations`, 2025-10-15 en DRT, en `payload.meta.locationCreatedAt`; tope
+  `MAX_HISTORY_MONTHS`) y **los anuncios con `created_time` anterior se descartan con
+  sus insights** (`filterAdsCreatedSince`). Pedido del cliente 2026-09-28: Zanda
+  arrastraba campañas de 2020-2021. Un anuncio **borrado** (con gasto pero fuera de
+  `/ads`) se conserva como "Anuncio eliminado"; su campaña se aprende del
+  `utmCampaignId` de sus leads. Cada sync re-trae la ventana completa, por meses
+  calendario; sin merge incremental: Meta corrige cifras hacia atrás y el caché no
+  guarda historia. Cada fila diaria lleva `accountId`.
+- **El fetch corre todas las cuentas en paralelo y tres meses concurrentes por cuenta**
+  (`ACCOUNT_CONCURRENCY` / `MONTH_CONCURRENCY` en `meta-client.ts`; Graph limita por ad
+  account). En serie tardaba 362 s y moría en el techo de 300 s del refresco. **`paging.next`
+  de Graph vuelve bajo OTRA versión** (`/v26.0/` cuando se pidió v23.0): `nextPageRequest`
+  quita cualquier `/vNN.N/`; sin eso las cuatro cuentas grandes (las únicas que paginan)
+  fallaban con `2500` en cada sync y el panel solo veía Palmyra y Zanda. Los códigos 1 y
+  2 son transitorios y se reintentan; 190 sigue siendo terminal.
 - **De `actions` solo salen dos contadores**: `lead` (formularios) y
   `onsite_conversion.messaging_conversation_started_7d` (WhatsApp) — los dos `source` de
   DRT. `leadsMeta` vs `leadsCrm` es una reconciliación, no un duplicado.
-- **El desarrollo de un ad se infiere** (`assignAdDesarrollos`): moda de los pipelines de
-  sus leads (los importados no votan), luego el nombre de un pipeline o etiqueta de
-  `PANEL_SCOPES` en campaña/adset/ad (agujas largas primero), luego `Sin desarrollo`.
-  Devuelve `mixed` (ads con leads en más de un desarrollo) para que la UI lo diga. **El
-  gasto no se reparte** entre desarrollos ni se convierte de moneda (`mixedCurrency`
-  apaga los costos consolidados). El valor siempre es el nombre real del pipeline — el
-  mismo string de `desarrolloOf` — para que `scopeMetaDaily` lo encuentre.
-- **Costo por etapa = cohorte de creación**: gasto de la ventana ÷ oportunidades creadas
-  en la ventana (día local CDMX) que alcanzaron la etapa; "alcanzó" es el prefijo numérico
-  de la etapa actual ≥ el objetivo (una perdida en `05.` sí alcanzó Visita) y **Venta es
-  `isWonOpp()` a secas** — `reachedStage` vive en `lib/desarrollo-funnel.ts` desde
-  2026-09-14 y la comparte con el embudo de GENERAL. Sin alcanzados → `null`, nunca `$0`.
+- **Cada cuenta publicitaria ES un desarrollo** ("Cañadas by El Mirador ", "Átria "…):
+  `accountToPipeline` casa el nombre de la cuenta con el pipeline (agujas largas primero)
+  y manda en `assignAdDesarrollos`; la inferencia de la entrega ① (moda de los pipelines
+  de sus leads, luego el nombre en campaña/adset/ad, luego `Sin desarrollo`) queda de
+  respaldo para una cuenta que no se llame como ningún desarrollo. Devuelve `mixed` (ads
+  con leads en más de un desarrollo) para que la UI lo diga. Por pestaña el gasto es el
+  de sus cuentas; un lead atado a un anuncio de otra cuenta va al pie (`otherAccount`) y
+  no entra al costo de esa pestaña. **El gasto no se reparte** entre desarrollos ni se
+  convierte de moneda (`mixedCurrency` apaga solo los costos del KPI global; una campaña
+  vive en una cuenta y sus costos siempre valen). El valor siempre es el nombre real del
+  pipeline — el mismo string de `desarrolloOf` — para que `scopeMetaDaily` lo encuentre.
+- **Costo por resultado = cohorte de creación** (`buildPautaInvestment`): gasto del
+  rango ÷ leads creados en el rango que alcanzaron la etapa; cita es `hadCita` (etapa
+  Cita ∪ ganada ∪ objeto Citas), visita es etapa Visita ∪ ganada, venta es `isWonOpp`.
+  "Alcanzó" es `reachedStage` de `lib/desarrollo-funnel.ts` (por palabra, ver "Panel
+  scope"). Sin resultados → `null`, nunca `$0`. `buildCostPerStage` y
+  `buildCampaignPerformance` ya no existen.
 - **`isDePauta` reconoce `source: "Pauta …"`** (`"pauta"` en `PAID_SOCIAL_SOURCES`):
   antes dependía solo de la relación con el objeto Pauta.
 - `lib/meta-client.ts` es **server-only** como `ghl-client.ts`. Lo puro está en
@@ -722,13 +750,13 @@ bug class these modules were extracted to kill.
 | `lib/lost-cross-matrix.ts` | el cruce de perdidas sobre dos de tres dimensiones (servicio / origen / canal); **ambos** ejes pueden ser multi-valor |
 | `lib/advisor-breakdown.ts` | la matriz asesor × etapa del embudo + el desglose de estatus por asesor |
 | `lib/assignment-funnel.ts` | el universo de las oportunidades sin asesor, por semana (lunes a domingo, día en CDMX) y por estatus, con el total de la semana como denominador; `weekKeyOf` / `weeksBetween` viven aquí |
-| `lib/pauta-performance.ts` | una fila por nombre de Pauta: leads / citas / ventas / perdidos por oportunidad, enlazada por **contacto** (`buildPautaNamesByContact`, acotada al `desarrollo` de la Pauta dentro de una pestaña); `hadCita` es la unión del embudo de GENERAL; totales por oportunidad distinta, `multiPauta`, `sinPauta` y `otroDesarrollo` explícitos |
+| `lib/pauta-performance.ts` | **sin montar** desde 2026-09-28 (la tarjeta "Inversión y rendimiento de pauta" la reemplazó); `hadCita` vive ahora en `desarrollo-funnel.ts` y `buildPautaNamesByContact` en `pauta.ts` (re-exportadas aquí) para que `meta-attribution` las importe sin ciclo |
 | `lib/leads-per-day.ts` | leads creados por día calendario en `America/Mexico_City` (vía `localDay` de `meta-attribution.ts`), huecos rellenados en cero, fila "Sin fecha" y el resumen del pie (promedio, pico) |
-| `lib/desarrollo-funnel.ts` | "alcanzó la etapa" por prefijo numérico (`stageIndexOf` / `reachedStage`), los recuentos registros/visitas/ventas por desarrollo y el embudo de seis pasos con la cita como unión etapa ∪ objeto Citas |
+| `lib/desarrollo-funnel.ts` | "alcanzó la etapa" por PALABRA de la etapa (`stageRungOf` / `reachedStage`; el número solo de respaldo), `hadCita`, los recuentos registros/visitas/ventas por desarrollo y el embudo de seis pasos con la cita como unión etapa ∪ objeto Citas |
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
 | `lib/meta-normalize.ts` | de la respuesta cruda de Graph a `MetaAdsData`; ventana de historia y chunks por mes |
-| `lib/meta-attribution.ts` | la llave por ad id, el desarrollo de cada ad, la clasificación del lead, el costo por etapa por cohorte y el rendimiento por campaña |
+| `lib/meta-attribution.ts` | la cadena de cuatro niveles (`classifyLead`), lo aprendido de los leads (URL → anuncio, campaña de anuncios borrados), cuenta = desarrollo, `buildMetaPanelContext` y `buildPautaInvestment`, la única agregación de la tarjeta |
 
 - **"Origen de lead" y "Canal de contacto" viven en el CONTACTO, no en la oportunidad.**
   `categoryValuesOf()` busca primero en la oportunidad y **cae al contacto** a través de un
