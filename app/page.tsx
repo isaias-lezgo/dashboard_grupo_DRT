@@ -758,6 +758,8 @@ export default function DashboardPage() {
               messages,
               tasks: data?.tasks ?? [],
               calls: data?.calls ?? [],
+              pipelines: data?.pipelines ?? [],
+              metaAds: data?.metaAds ?? null,
             }}
             locationId={data?.locationId}
           />

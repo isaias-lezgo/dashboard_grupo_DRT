@@ -12,6 +12,7 @@ import type {
 } from "@/lib/types";
 import type { ChatDataset } from "@/lib/ai-tools";
 import { buildPautaNameByContact } from "@/lib/pauta";
+import { buildMetaPanelContext, type MetaPanelContext } from "@/lib/meta-attribution";
 
 export interface ChatIndex {
   contactById: Map<string, Contact>;
@@ -90,4 +91,26 @@ export function getChatIndex(data: ChatDataset): ChatIndex {
     tasks: data.tasks,
   });
   return index;
+}
+
+// El contexto de Meta (índice, lo aprendido de los leads, cuenta = desarrollo)
+// para `resumen_pauta`. Se memoiza por referencia de `metaAds` y de los sets
+// que lo alimentan, como getChatIndex: armarlo cuesta unos cientos de ms sobre
+// 15 000 oportunidades y el agente puede llamar la herramienta varias veces
+// en un turno.
+let metaCache: { key: unknown[]; panel: MetaPanelContext } | null = null;
+
+export function getMetaPanel(data: ChatDataset): MetaPanelContext | null {
+  if (!data.metaAds) return null;
+  const key = [data.metaAds, data.opportunities, data.contacts, data.pautas, data.pipelines];
+  if (metaCache && metaCache.key.every((k, i) => k === key[i])) return metaCache.panel;
+  const panel = buildMetaPanelContext({
+    meta: data.metaAds,
+    allOpportunities: data.opportunities,
+    contacts: data.contacts,
+    pautas: data.pautas,
+    pipelines: data.pipelines,
+  });
+  metaCache = { key, panel };
+  return panel;
 }

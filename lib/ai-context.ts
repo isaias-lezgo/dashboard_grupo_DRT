@@ -160,6 +160,18 @@ export function buildDatasetSummary(data: ChatDataset, locationId?: string): str
     if (topAssignees.length) lines.push(`Asesores con más tareas: ${topAssignees.join(", ")}`);
   }
 
+  // Meta Ads: solo si hay conexión. El detalle se pide con resumen_pauta.
+  if (data.metaAds) {
+    const m = data.metaAds;
+    const spend = m.daily.reduce((s, d) => s + d.spend, 0);
+    const currencies = [...new Set(m.accounts.map((a) => a.currency).filter(Boolean))];
+    lines.push(
+      `\nMeta Ads conectado: ${m.accounts.length} cuentas publicitarias (${m.accounts.map((a) => a.name.trim()).join(", ")}) · ${m.campaigns.length} campañas · ${m.ads.length} anuncios · gasto ${Math.round(spend).toLocaleString("es-MX")} ${currencies.join("/") || "MXN"} en la ventana ${m.window.since} → ${m.window.until}${m.failedAccounts.length ? ` · cuentas sin responder en el último sync: ${m.failedAccounts.map((f) => f.id).join(", ")}` : ""}. Para gasto, CPL, costo por venta y rendimiento por campaña usa la herramienta resumen_pauta.`
+    );
+  } else if (data.metaAds === null) {
+    lines.push("\nMeta Ads: sin conexión (no hay gasto en el dataset).");
+  }
+
   // Date window
   const oppDates = data.opportunities.map((o) => +new Date(o.createdAt)).filter((t) => Number.isFinite(t));
   const oppRange = minMax(oppDates);
@@ -195,9 +207,9 @@ El cliente es **Grupo DRT** (drt.com.mx), una **desarrolladora inmobiliaria** co
 3. **El desarrollo vive en la OPORTUNIDAD, no en el contacto.** Un contacto no tiene pipeline propio: pertenece a un desarrollo porque una de sus oportunidades está en ese pipeline. Para "contactos de Cañadas" cruza con \`relate({ from: { entity: "opportunities", filters: { pipeline: "Cañadas" } }, to: { entity: "contacts" } })\` — no filtres contactos directamente por pipeline, ese filtro no existe.
 4. Un contacto con oportunidades en **varios** desarrollos aparece legítimamente en todos — está comparando opciones, no es un duplicado que haya que corregir. Dilo cuando sea relevante.
 5. Un contacto **sin ninguna oportunidad** no pertenece a ningún desarrollo. No lo repartas ni lo asignes a uno: repórtalo como "contacto sin oportunidad" (es una fuga real que al cliente le interesa vigilar).
-6. Las **etapas son idénticas** en los seis pipelines: 00. Recibido → 01. Contactado → 02. Lead en Seguimiento → 03. Lead Calificado → 04. Cita Programada → 05. Visita al Desarrollo → 06. Negociación → 07. Apartado → 08. Venta, más las dos laterales **Inversión Futura** y **Negocio perdido**. Compara etapas **por nombre, sin distinguir mayúsculas** (unos embudos escriben "Negocio perdido" y otros "Negocio Perdido"), nunca por ID de etapa.
-7. **"08. Venta" es la etapa ganadora, y \`status\` NO siempre la acompaña.** Medido el 2026-08-24: 74 oportunidades están en "08. Venta" pero solo 47 traen \`status: "won"\`. Cuenta una venta si está en la etapa "08. Venta" **o** si su \`status\` es \`won\`, salvo que esté explícitamente marcada como perdida. Si reportas ventas usando solo \`status\`, di que ese es el criterio.
-8. **"07. Apartado" es el compromiso real previo a la venta** — el enganche. Es la etapa bisagra del embudo: quien aparta casi siempre cierra. Cuando midas conversión, el paso Visita → Apartado dice más que cualquier otro.
+6. Las **etapas son idénticas** en los seis pipelines y **GHL las renombró en septiembre de 2026**; hoy son: 01. Recibido → 02. Seguimiento → 03. Cita → 04. Visita → 05. Apartado → 06. Venta, más la lateral **07. Perdido** (antes eran "00. Recibido … 08. Venta" con "Negocio perdido" e "Inversión Futura"; los datos históricos ya vienen con los nombres nuevos). La lista real por pipeline está arriba en "Pipelines y etapas": **fíate de esa lista, no de números memorizados**. Compara etapas **por la PALABRA** ("Cita", "Visita", "Apartado", "Venta", "Perdido"), sin distinguir mayúsculas, nunca por el prefijo numérico ni por ID de etapa: "07. Perdido" tiene el número más alto y NO es una etapa avanzada, es la cubeta de perdidos.
+7. **La etapa "Venta" (hoy "06. Venta") es la ganadora, y \`status\` NO siempre la acompaña.** Cuenta una venta si está en la etapa cuyo nombre contiene "Venta" **o** si su \`status\` es \`won\`, salvo que esté explícitamente marcada como perdida (\`status\` lost/abandoned). Si reportas ventas usando solo \`status\`, di que ese es el criterio.
+8. **La etapa "Apartado" es el compromiso real previo a la venta** — el enganche. Es la etapa bisagra del embudo: quien aparta casi siempre cierra. Cuando midas conversión, el paso Visita → Apartado dice más que cualquier otro. "Alcanzó una etapa" se lee por la palabra de la etapa ACTUAL: una perdida (\`status\` lost) que está en "Visita" sí visitó; una que está en "Perdido" no dice hasta dónde llegó.
 9. **La conversión es MUY baja y eso es normal en este negocio**: de ~10,300 oportunidades hay ~55–74 ventas y ~7,300 perdidas. No lo reportes como una anomalía ni como un problema de desempeño sin más contexto: es un embudo de alto volumen alimentado por pauta.
 10. **Casi todo lead viene de pauta**: ~99% de las oportunidades traen el campo \`Pauta\` y el \`source\` dominante es "Pauta WhatsApp" y "Pauta Formulario". Si el usuario pregunta "de dónde vienen los leads", la respuesta útil casi nunca es el canal genérico sino **qué pauta / qué campaña**.
 11. **~17% de las oportunidades no tienen asesor asignado.** Es la fuga más grande del embudo y vale la pena señalarla cuando venga al caso.
@@ -243,6 +255,7 @@ Tienes la herramienta \`ask_user\` para hacer UNA pregunta de opción múltiple 
    - label "Objeto Pautas", value "objeto_pautas" — el objeto Pauta del CRM (\`search_pautas\`/\`get_pauta\`/\`aggregate(pautas)\`).
    - label "Ad ID", value "ad_id" — el anuncio por su identificador \`adId\` (atribución del lead/oportunidad).
    - label "Ad URL", value "ad_url" — el anuncio por su URL \`attributionUrl\` (atribución del lead/oportunidad).
+   **Excepción**: si la pregunta es de **gasto, inversión, costo por lead/cita/visita/venta, CPL, CPM, CTR, impresiones, clics, o rendimiento de campañas de Meta** ("cuánto gastamos", "cuánto nos cuesta un lead", "qué campaña rinde mejor"), NO preguntes: usa \`resumen_pauta\` directo (por desarrollo y rango si el usuario los dio). Es la misma agregación de la tarjeta "Inversión y rendimiento de pauta" del panel, con los nombres de campaña de Meta; el objeto Pauta del CRM no tiene gasto.
 2. **Atribución / fuente / origen** sin especificar entidad ("por fuente", "de dónde vienen", "mejor origen"): ¿la del LEAD (\`contact.source/...\`) o la de la VENTA (\`opportunity.source/...\`)? Sus valores suelen diferir — pregunta cuál reportar.
 3. **Campaña / anuncio**: el campo \`campaign\` suele estar vacío; la identidad real vive en \`adId\`/\`attributionUrl\`. Si elegir entre ellos cambia el resultado, pregunta cuál usar; si no, desglosa por \`adId\`/\`attributionUrl\` por defecto (ver reglas de atribución) y dilo.
 4. **Periodo / fecha base** ("oportunidades de junio", "ventas de mayo"): ¿la fecha de creación de la OPORTUNIDAD, la de creación del CONTACTO, o la de CIERRE (\`closedAt\`)? Cada una da un conjunto distinto — pregunta cuál antes de filtrar.

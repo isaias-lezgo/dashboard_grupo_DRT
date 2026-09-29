@@ -10,8 +10,13 @@ import type {
   Message,
   Task,
   Call,
+  Pipeline,
+  MetaAdsData,
+  MetaDailyRow,
 } from "@/lib/types";
-import { getChatIndex, type ChatIndex } from "@/lib/ai-index";
+import { getChatIndex, getMetaPanel, type ChatIndex } from "@/lib/ai-index";
+import { buildPautaInvestment, type PautaMetrics } from "@/lib/meta-attribution";
+import { desarrolloOf, normalizeDesarrolloName } from "@/lib/panel-scope";
 import { isDePauta, resolveCampaignName } from "@/lib/pauta";
 import { buildCsv } from "@/lib/csv";
 
@@ -23,6 +28,10 @@ export interface ChatDataset {
   messages: Message[];
   tasks: Task[];
   calls: Call[];
+  /** Para acotar por desarrollo (el pipeline ES el desarrollo). Opcional por compatibilidad. */
+  pipelines?: Pipeline[];
+  /** Gasto de Meta Ads; null = sin conexión, ausente = no se pasó. Lo lee `resumen_pauta`. */
+  metaAds?: MetaAdsData | null;
 }
 
 // ─── Chart spec (render_chart tool) ─────────────────────────────────────────────
@@ -659,6 +668,21 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "resumen_pauta",
+    description:
+      "Inversión en Meta Ads cruzada con el CRM: gasto, impresiones, clics, CPM, CTR, leads que Meta reportó vs. leads que llegaron al CRM, citas, visitas, ventas, CPL y costo por venta, por campaña de Meta (con sus anuncios). Es la MISMA agregación de la tarjeta \"Inversión y rendimiento de pauta\" del panel. Úsala para cualquier pregunta de gasto, inversión, costo por lead/cita/visita/venta, CPM, CTR o rendimiento de campañas de Meta. Devuelve error si Meta no está conectado. Los leads son la cohorte de oportunidades CREADAS en el rango (día de America/Mexico_City) atadas a un anuncio o campaña de Meta; el gasto son los días del rango.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pipeline: { type: "string", description: "Nombre del desarrollo/pipeline (p. ej. \"Cañadas\"). Omitir = todos (GENERAL)." },
+        start: { type: "string", description: "YYYY-MM-DD inclusivo, en America/Mexico_City. Omitir = desde la creación de la subcuenta." },
+        end: { type: "string", description: "YYYY-MM-DD inclusivo. Omitir = hoy." },
+        topCampaigns: { type: "number", description: "Cuántas campañas devolver, por gasto desc (default 15, máx 60)." },
+        includeAds: { type: "boolean", description: "Incluir los anuncios de cada campaña (id, nombre, URL, métricas). Default false." },
+      },
+    },
+  },
+  {
     name: "ask_user",
     description:
       "Hace UNA pregunta de opción múltiple al usuario y PAUSA hasta que responda. Úsalo SOLO cuando un término sea genuinamente ambiguo entre rutas de datos distintas que darían respuestas materialmente diferentes y el contexto no lo aclare (ver la sección 'Cuándo preguntar' del prompt). Llama esta herramienta SOLA (sin otras herramientas en el mismo turno). NO la uses para ambigüedades triviales ni si el usuario ya especificó la ruta — en esos casos elige el valor por defecto y dilo en una línea.",
@@ -962,6 +986,8 @@ export function executeTool(
       return listAppointments(input, data, getChatIndex(data));
     case "aggregate":
       return aggregate(input, data);
+    case "resumen_pauta":
+      return resumenPauta(input, data);
     case "relate":
       return relate(input, data, getChatIndex(data));
     case "show_in_panel": {
@@ -987,6 +1013,78 @@ export function executeTool(
     default:
       return { error: `Unknown tool: ${name}` };
   }
+}
+
+// ─── resumen_pauta ────────────────────────────────────────────────────────────
+// La misma agregación que la tarjeta del panel (buildPautaInvestment), para
+// que el asistente y la UI digan lo mismo del mismo periodo. El contexto de
+// Meta se memoiza por referencia de `data.metaAds` en lib/ai-index.
+
+function metricsOut(m: PautaMetrics) {
+  const r2 = (v: number | null) => (v === null ? null : Math.round(v * 100) / 100);
+  return {
+    gasto: r2(m.spend), impresiones: m.impressions, clics: m.clicks, cpm: r2(m.cpm), ctr: r2(m.ctr),
+    leadsMeta: m.leadsMeta, leadsCrm: m.leadsCrm, citas: m.citas, visitas: m.visitas, ventas: m.ventas,
+    cpl: r2(m.cpl), costoPorVenta: r2(m.costPerVenta),
+  };
+}
+
+function resumenPauta(input: ToolInput, data: ChatDataset): ToolOutput {
+  const meta = data.metaAds;
+  if (!meta) return { error: "Meta Ads no está conectado en este panel (o el sync no trajo el dataset). No hay gasto que reportar." };
+  const panel = getMetaPanel(data);
+  if (!panel) return { error: "No se pudo armar el índice de Meta." };
+  const pipelines = data.pipelines ?? [];
+  const pipelineName = typeof input.pipeline === "string" && input.pipeline.trim() ? input.pipeline.trim() : null;
+  let desarrollo: string | null = null;
+  if (pipelineName) {
+    const wanted = normalizeDesarrolloName(pipelineName);
+    const real = pipelines.find((p) => normalizeDesarrolloName(p.name) === wanted)?.name?.trim();
+    if (!real) return { error: `No existe un desarrollo/pipeline llamado "${pipelineName}". Opciones: ${pipelines.map((p) => p.name).join(", ")}.` };
+    desarrollo = real;
+  }
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const start = typeof input.start === "string" && day.test(input.start) ? input.start : null;
+  const end = typeof input.end === "string" && day.test(input.end) ? input.end : null;
+  const range = start || end ? { start: start ?? meta.window.since, end: end ?? meta.window.until } : null;
+  const opps = data.opportunities.filter((o) => {
+    if (desarrollo && desarrolloOf(o, pipelines) !== desarrollo) return false;
+    if (!range) return true;
+    const d = localDayOf(o.createdAt);
+    return d >= range.start && d <= range.end;
+  });
+  const accountIds = desarrollo === null ? null : new Set([...panel.accountToPipeline.entries()].filter(([, d]) => d === desarrollo).map(([k]) => k));
+  const daily = desarrollo === null ? meta.daily : meta.daily.filter((d: MetaDailyRow) => panel.desarrolloByAd.get(d.adId) === desarrollo);
+  const contactsWithCita = new Set(data.appointments.map((a) => a.contactId).filter(Boolean));
+  const inv = buildPautaInvestment({ opportunities: opps, daily, range, ctx: panel.ctx, contactsWithCita, accountIds });
+  const top = Math.min(60, Math.max(1, typeof input.topCampaigns === "number" ? input.topCampaigns : 15));
+  const includeAds = input.includeAds === true;
+  return {
+    alcance: desarrollo ?? "GENERAL (todos los desarrollos)",
+    rango: range ?? { start: meta.window.since, end: meta.window.until, nota: "toda la ventana sincronizada" },
+    moneda: inv.mixedCurrency ? "mixta (costos consolidados apagados)" : inv.currency || "MXN",
+    kpi: metricsOut(inv.kpi),
+    leadsPorNivel: inv.via,
+    sinVincular: { dePautaSinLlave: inv.noAdId.count, adIdDeCuentaNoConectada: inv.unknownAd.count, deOtraCuenta: inv.otherAccount.count, noSonDePauta: inv.notPauta },
+    gastoSinCampana: Math.round(inv.unlinkedSpend * 100) / 100,
+    campanas: inv.campaigns.slice(0, top).map((c) => ({
+      campana: c.name,
+      cuenta: c.accountName,
+      ...metricsOut(c.metrics),
+      leadsSoloPorCampana: c.campaignOnlyLeads,
+      anuncios: includeAds
+        ? c.ads.map((a) => ({ adId: a.adId, nombre: a.name, eliminado: a.deleted, urls: a.urls.slice(0, 3), ...metricsOut(a.metrics) }))
+        : c.ads.length,
+    })),
+    totalCampanas: inv.campaigns.length,
+    nota: "Leads = oportunidades creadas en el rango atadas a un anuncio/campaña de Meta por ad id, id de campaña, URL o nombre (un solo nivel por oportunidad). Citas = etapa Cita o posterior, ganada, o cita en el objeto Citas. Visitas = etapa Visita o posterior o ganada. Ventas = ganadas. Con ciclo de meses, el costo por venta de un periodo reciente sale alto.",
+  };
+}
+
+function localDayOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
 // ─── CSV export ───────────────────────────────────────────────────────────────
@@ -1153,7 +1251,7 @@ function listFields(input: ToolInput, data: ChatDataset) {
         "city", "state", "country", "address1", "postalCode", "timezone", "website",
         "tags", "source", "campaign", "adType", "adId", "attributionMedium", "attributionUrl", "assignedTo",
         "dateOfBirth", "lastActivity", "dateAdded", "createdAt", "dateUpdated",
-        "dnd", "type", "customFields", "customFieldsResolved", "attributionSource", "attributions",
+        "dnd", "type", "customFieldsResolved", "attributionSource", "attributions",
       ],
       note: "attributionMedium is the REAL platform/channel a lead came from — values like 'whatsapp', 'facebook', 'instagram', 'tiktok'. For ANY 'por qué plataforma / canal' question (Facebook vs Instagram vs TikTok vs WhatsApp), group by 'attributionMedium' — NEVER infer the platform from tags, which only cover a fraction of leads. adType distinguishes paid vs organic ('Paid Social' vs 'Social media'); combine the two for a full picture. customFieldsResolved is a name→value object with human-readable field names (e.g. {\"Origen de Lead\": \"Facebook\"}); multi-option/checkbox fields hold a string[] (e.g. {\"Origen de Lead\": [\"Facebook\",\"Instagram\"]}). To filter, pass customFields: { \"Field Name\": \"value\" } to search_contacts/aggregate; to group or enumerate, use 'cf:<Field Name>'. Run list_values field='cf:<Field Name>' first to see exact option values.",
       count: data.contacts.length,
