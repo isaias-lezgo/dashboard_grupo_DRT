@@ -332,5 +332,10 @@ export interface DashboardPayload {
     /** When the data was pulled from GHL — the clock behind "Actualizado hace X"
      *  and the value stored in `project_sync.synced_at`. */
     fetchedAt: string
+    /**
+     * ISO de `dateAdded` de la subcuenta. Ancla la ventana de Meta Ads y el
+     * filtro de anuncios; ausente si GHL no lo devolvió o en frames viejos.
+     */
+    locationCreatedAt?: string
   }
 }

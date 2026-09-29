@@ -29,7 +29,6 @@ import { withClient } from "@/lib/ghl-context";
 import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
 import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
 import { historyWindow } from "@/lib/meta-normalize";
-import { oppAdId } from "@/lib/meta-attribution";
 import { deletedUserLabel } from "@/lib/panel-filters";
 import { PANEL_TIME_ZONE } from "@/lib/task-backlog";
 import type { ClientConfig } from "@/lib/clients";
@@ -505,6 +504,7 @@ export async function syncProject(
     // Resolve the sub-account name first so the loading screen can show which
     // location is being opened. Cheap single call — don't block the rest on it.
     let locationName = "";
+    let locationCreatedAt: string | undefined;
     const locationPromise = getLocation()
       .then((res) => {
         const name = res?.location?.name?.trim();
@@ -512,6 +512,8 @@ export async function syncProject(
           locationName = name;
           send({ type: "location", name });
         }
+        const created = res?.location?.dateAdded?.trim();
+        if (created && !Number.isNaN(new Date(created).getTime())) locationCreatedAt = created;
       })
       .catch(() => {
         /* non-fatal: loading screen just omits the sub-account name */
@@ -735,13 +737,15 @@ export async function syncProject(
     }
 
     // ── Meta Ads ──────────────────────────────────────────────────────────
-    // Corre DESPUÉS del transform de opportunities porque la ventana de historia
-    // sale de la oportunidad más antigua con ad id, y oppAdId() necesita las
-    // oportunidades ya normalizadas (attribution + custom field). Sin conexión
-    // no se emite el paso: eso no es un error, es que nadie ha apretado
-    // "Conectar con Meta".
+    // La ventana de historia se ancla en el dateAdded de la subcuenta (resuelto
+    // por locationPromise, abajo se espera). Sin conexión no se emite el paso:
+    // eso no es un error, es que nadie ha apretado "Conectar con Meta".
     const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
       send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
+
+    // La ventana de Meta se ancla en la creación de la subcuenta, así que la
+    // resolución de /locations tiene que haber terminado antes de pedir gasto.
+    await locationPromise;
 
     let metaAds: MetaAdsData | null = null;
     let metaWarning: SyncWarning | null = null;
@@ -769,10 +773,7 @@ export async function syncProject(
         metaAds = await fetchMetaAds({
           token: metaToken,
           accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
-          window: historyWindow(
-            opportunities.map((o) => ({ createdAt: o.createdAt, adId: oppAdId(o) ?? undefined })),
-            today
-          ),
+          window: historyWindow(locationCreatedAt, today),
           onProgress: (n) => metaStep("loading", n),
         });
         if (metaAds.failedAccounts.length > 0) {
@@ -845,6 +846,7 @@ export async function syncProject(
         totalContacts: contacts.length,
         totalOpportunities: opportunities.length,
         fetchedAt: new Date().toISOString(),
+        ...(locationCreatedAt ? { locationCreatedAt } : {}),
       },
     };
   });

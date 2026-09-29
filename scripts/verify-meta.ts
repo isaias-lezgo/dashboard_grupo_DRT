@@ -89,21 +89,19 @@ async function main() {
   ]);
   assert.deepEqual(monthChunks("2026-09-13", "2026-09-01"), [], "ventana invertida = nada");
 
-  // --- ventana de historia: desde el primer día del mes de la opp más vieja con adId
-  const w = historyWindow(
-    [
-      { createdAt: "2025-11-20T10:00:00.000Z", adId: undefined },
-      { createdAt: "2026-01-17T10:00:00.000Z", adId: "1" },
-      { createdAt: "2026-03-02T10:00:00.000Z", adId: "2" },
-    ],
-    "2026-09-13"
-  );
-  assert.deepEqual(w, { since: "2026-01-01", until: "2026-09-13" });
+  // --- ventana de historia: desde el primer día del mes en que se creó la subcuenta
+  assert.deepEqual(historyWindow("2025-10-15T21:34:53.965Z", "2026-09-28"), {
+    since: "2025-10-01",
+    until: "2026-09-28",
+  });
   // --- tope de 24 meses
-  const old = historyWindow([{ createdAt: "2020-01-01T00:00:00.000Z", adId: "1" }], "2026-09-13");
+  const old = historyWindow("2020-01-01T00:00:00.000Z", "2026-09-13");
   assert.equal(old.since, "2024-09-01", `tope de ${MAX_HISTORY_MONTHS} meses`);
-  // --- sin oportunidades con adId: solo el mes actual
-  assert.deepEqual(historyWindow([], "2026-09-13"), { since: "2026-09-01", until: "2026-09-13" });
+  // --- sin fecha de creación (GHL no la devolvió): solo el mes actual
+  assert.deepEqual(historyWindow(undefined, "2026-09-13"), { since: "2026-09-01", until: "2026-09-13" });
+  assert.deepEqual(historyWindow("no-es-fecha", "2026-09-13"), { since: "2026-09-01", until: "2026-09-13" });
+  // --- subcuenta "creada" después de hoy (reloj mal): no se pide una ventana invertida
+  assert.deepEqual(historyWindow("2027-01-01T00:00:00.000Z", "2026-09-13"), { since: "2026-09-01", until: "2026-09-13" });
 
   // --- merge: concatena, marca fallidas, conserva la ventana
   const merged = mergeMetaAds(

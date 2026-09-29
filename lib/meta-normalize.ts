@@ -141,25 +141,22 @@ export function monthChunks(since: string, until: string): { since: string; unti
   return out;
 }
 
-// Desde el primer día del mes de la oportunidad más antigua con adId, con tope de
-// MAX_HISTORY_MONTHS. Sin oportunidades con adId: solo el mes en curso. `today`
-// es YYYY-MM-DD ya en la zona horaria del panel; este módulo no sabe de zonas.
+// Desde el primer día del mes en que se creó la subcuenta de GHL, con tope de
+// MAX_HISTORY_MONTHS. Pedido del cliente (2026-09-28): lo que se pautó antes de
+// que existiera el CRM no tiene con qué cruzarse. Sin fecha (GHL no la devolvió
+// o no parsea): solo el mes en curso. `today` es YYYY-MM-DD ya en la zona
+// horaria del panel; este módulo no sabe de zonas.
 export function historyWindow(
-  opps: { createdAt: string; adId?: string }[],
+  locationCreatedAt: string | null | undefined,
   today: string
 ): { since: string; until: string } {
   const [ty, tm] = today.split("-").map(Number);
-  let earliest: string | null = null;
-  for (const o of opps) {
-    if (!o.adId) continue;
-    const d = o.createdAt.slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-    if (earliest === null || d < earliest) earliest = d;
-  }
-  let since = ymd(ty, tm, 1);
-  if (earliest) {
-    const [ey, em] = earliest.split("-").map(Number);
-    since = ymd(ey, em, 1);
+  const thisMonth = ymd(ty, tm, 1);
+  let since = thisMonth;
+  const created = (locationCreatedAt ?? "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(created)) {
+    const [cy, cm] = created.split("-").map(Number);
+    since = ymd(cy, cm, 1);
   }
   // Tope: MAX_HISTORY_MONTHS meses atrás, primer día de ese mes.
   let fy = ty;
@@ -170,6 +167,7 @@ export function historyWindow(
   }
   const floor = ymd(fy, fm, 1);
   if (since < floor) since = floor;
+  if (since > today) since = thisMonth;
   return { since, until: today };
 }
 

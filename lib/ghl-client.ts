@@ -209,6 +209,8 @@ export interface GHLLocation {
   name: string;
   companyId?: string;
   logoUrl?: string;
+  /** ISO. Cuándo se creó la subcuenta; ancla la ventana de Meta Ads. */
+  dateAdded?: string;
 }
 
 export interface GHLLocationResponse {
