@@ -14,6 +14,9 @@ import {
   mergeMetaAds,
   nextPageRequest,
   filterAdsCreatedSince,
+  dateChunks,
+  splitRange,
+  INSIGHTS_CHUNK_DAYS,
   MAX_HISTORY_MONTHS,
 } from "../lib/meta-normalize";
 
@@ -152,6 +155,30 @@ async function main() {
   const hNew = normalizeAds("act_1", [{ id: "n", name: "a1", created_time: "2026-02-01T10:00:00+0000" }]);
   assert.equal(hNew.ads[0].createdTime, "2026-02-01T10:00:00+0000");
   assert.equal(normalizeInsightRow({ ad_id: "1", date_start: "2026-09-01" }, "act_9").accountId, "act_9");
+
+  // --- insights por tramos de 7 días: Meta agota sus ~30 s con un mes entero a nivel
+  // anuncio × día en cuentas de >500 anuncios (Átria, Saggita: code 2 / 1504044 y
+  // code 1 / 99, medido 2026-09-29). Tramos contiguos, sin traslape, el último recortado.
+  assert.equal(INSIGHTS_CHUNK_DAYS, 7);
+  assert.deepEqual(dateChunks("2026-09-01", "2026-09-29", 7), [
+    { since: "2026-09-01", until: "2026-09-07" },
+    { since: "2026-09-08", until: "2026-09-14" },
+    { since: "2026-09-15", until: "2026-09-21" },
+    { since: "2026-09-22", until: "2026-09-28" },
+    { since: "2026-09-29", until: "2026-09-29" },
+  ]);
+  assert.deepEqual(dateChunks("2026-02-26", "2026-03-03", 7), [{ since: "2026-02-26", until: "2026-03-03" }], "cruza el mes sin cortar");
+  assert.deepEqual(dateChunks("2026-09-13", "2026-09-01", 7), [], "ventana invertida = nada");
+  // --- bisección: un tramo que Meta no puede calcular se parte a la mitad hasta el día
+  assert.deepEqual(splitRange("2026-09-01", "2026-09-07"), [
+    { since: "2026-09-01", until: "2026-09-04" },
+    { since: "2026-09-05", until: "2026-09-07" },
+  ]);
+  assert.deepEqual(splitRange("2026-09-01", "2026-09-02"), [
+    { since: "2026-09-01", until: "2026-09-01" },
+    { since: "2026-09-02", until: "2026-09-02" },
+  ]);
+  assert.equal(splitRange("2026-09-01", "2026-09-01"), null, "un día no se parte más");
 
   console.log("✅ verify:meta OK");
 }

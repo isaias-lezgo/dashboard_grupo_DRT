@@ -155,8 +155,51 @@ function lastDayOfMonth(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-// Meta se ahoga con rangos largos a nivel ad; un mes calendario por petición es
-// el tamaño que cabe sin volverse un job asíncrono.
+function addDays(ymdStr: string, n: number): string {
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+/**
+ * Días por petición de insights. Un mes entero a nivel anuncio × día rebasa
+ * los ~30 s que Meta se da a sí misma en cuentas de más de 500 anuncios (Átria
+ * y Saggita: code 2 / subcode 1504044 y code 1 / subcode 99, medido
+ * 2026-09-29), y eso no es transitorio: reintentar igual solo quema 90 s. Una
+ * semana cabe de sobra; el tramo que aun así truene se parte (splitRange).
+ */
+export const INSIGHTS_CHUNK_DAYS = 7;
+
+/** Tramos contiguos de `days` días, el último recortado a `until`. */
+export function dateChunks(since: string, until: string, days: number): { since: string; until: string }[] {
+  if (since > until || days < 1) return [];
+  const out: { since: string; until: string }[] = [];
+  let cursor = since;
+  while (cursor <= until) {
+    const end = addDays(cursor, days - 1);
+    out.push({ since: cursor, until: end < until ? end : until });
+    cursor = addDays(end, 1);
+  }
+  return out;
+}
+
+/** Las dos mitades de un tramo, o null si ya es un solo día. */
+export function splitRange(since: string, until: string): [{ since: string; until: string }, { since: string; until: string }] | null {
+  if (since >= until) return null;
+  const [y1, m1, d1] = since.split("-").map(Number);
+  const [y2, m2, d2] = until.split("-").map(Number);
+  const a = Date.UTC(y1, m1 - 1, d1);
+  const b = Date.UTC(y2, m2 - 1, d2);
+  const days = Math.round((b - a) / 86_400_000) + 1;
+  const firstLen = Math.ceil(days / 2);
+  const mid = addDays(since, firstLen - 1);
+  return [
+    { since, until: mid },
+    { since: addDays(mid, 1), until },
+  ];
+}
+
+// Tramos por mes calendario (la ventana de historia se razona en meses).
 export function monthChunks(since: string, until: string): { since: string; until: string }[] {
   if (since > until) return [];
   const out: { since: string; until: string }[] = [];

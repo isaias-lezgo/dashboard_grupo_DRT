@@ -614,9 +614,17 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   `utmCampaignId` de sus leads. Cada sync re-trae la ventana completa, por meses
   calendario; sin merge incremental: Meta corrige cifras hacia atrás y el caché no
   guarda historia. Cada fila diaria lleva `accountId`.
-- **El fetch corre todas las cuentas en paralelo y tres meses concurrentes por cuenta**
-  (`ACCOUNT_CONCURRENCY` / `MONTH_CONCURRENCY` en `meta-client.ts`; Graph limita por ad
-  account). En serie tardaba 362 s y moría en el techo de 300 s del refresco. **`paging.next`
+- **Los insights se piden por tramos de UNA SEMANA** (`INSIGHTS_CHUNK_DAYS`, `dateChunks`),
+  **todas las cuentas en paralelo y ocho tramos concurrentes por cuenta**
+  (`ACCOUNT_CONCURRENCY` / `CHUNK_CONCURRENCY` en `meta-client.ts`; Graph limita por ad
+  account y la utilización medida es 0.01 %). Un mes entero a nivel anuncio × día rebasa
+  los ~30 s que Meta se da a sí misma en cuentas de más de 500 anuncios (Átria y Saggita:
+  `code 2 / subcode 1504044` y `code 1 / subcode 99`, medido 2026-09-29) — **eso no es
+  transitorio y NO se reintenta**: el tramo se parte a la mitad (`splitRange`,
+  `fetchInsightsRange`) hasta el día. `reach` no es el cuello (medido). Con meses en
+  serie el fetch tardaba 362 s; con semanas × 8 tarda ~106 s para las seis cuentas
+  (2,430 anuncios, 22,406 filas), y no puede pasar de 300 s junto con el sync de GHL
+  porque el refresco en segundo plano moriría en silencio. **`paging.next`
   de Graph vuelve bajo OTRA versión** (`/v26.0/` cuando se pidió v23.0): `nextPageRequest`
   quita cualquier `/vNN.N/`; sin eso las cuatro cuentas grandes (las únicas que paginan)
   fallaban con `2500` en cada sync y el panel solo veía Palmyra y Zanda. Los códigos 1 y

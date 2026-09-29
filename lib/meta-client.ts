@@ -7,10 +7,12 @@
 // del OAuth, y esa tampoco escribe nada en Meta.
 import { GRAPH_VERSION } from "./meta-oauth";
 import {
-  monthChunks,
+  dateChunks,
   filterAdsCreatedSince,
+  INSIGHTS_CHUNK_DAYS,
   mergeMetaAds,
   nextPageRequest,
+  splitRange,
   normalizeAds,
   normalizeInsightRow,
   type RawAd,
@@ -21,19 +23,23 @@ import type { MetaAdsData, MetaDailyRow } from "./types";
 
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// Códigos de Graph que vale la pena reintentar: throttling (4, 17, 32, 613,
-// 80004) y los transitorios que Meta documenta como "vuelve a intentar" (1
-// "Unknown error", 2 "Service temporarily unavailable" — Átria cayó con un 2 el
-// 2026-09-28 y sin reintento la cuenta entera se perdía del sync). 190 (token
-// inválido/revocado) NO está aquí a propósito: es terminal.
-const RETRYABLE_CODES = new Set([1, 2, 4, 17, 32, 613, 80004]);
+// Códigos de throttling de Graph que vale la pena reintentar. 190 (token
+// inválido/revocado) NO está aquí a propósito: es terminal. Tampoco 1 y 2
+// ("Unknown error" / "Service temporarily unavailable"): en insights significan
+// "consulta demasiado pesada" y se resuelven partiendo el tramo
+// (fetchInsightsRange), no repitiéndolo.
+const RETRYABLE_CODES = new Set([4, 17, 32, 613, 80004]);
+// Códigos con los que Meta se rinde antes de terminar de calcular un tramo.
+const TOO_HEAVY_CODES = new Set([1, 2]);
 const MAX_ATTEMPTS = 3;
 // Graph limita por AD ACCOUNT, no por token: todas las cuentas pueden ir a la
-// vez. Dentro de una cuenta, tres meses en paralelo. Medido 2026-09-28: en
-// serie (2 cuentas, meses uno por uno) el fetch de DRT tardaba 362 s, arriba
-// del techo de 300 s del refresco en segundo plano.
+// vez. Dentro de una cuenta, ocho tramos semanales en paralelo. Medido
+// 2026-09-29 en Átria: una semana tarda 7-12 s sola y seis en paralelo tardan
+// 13 s en total, con la utilización del límite de insights en 0.01 %; con tres
+// en paralelo las seis cuentas tardaban 285 s, arriba del techo de 300 s del
+// refresco en segundo plano junto con el sync de GHL.
 const ACCOUNT_CONCURRENCY = 8;
-const MONTH_CONCURRENCY = 3;
+const CHUNK_CONCURRENCY = 8;
 
 export class MetaApiError extends Error {
   code: number;
@@ -214,7 +220,27 @@ async function adInsightsDaily(
   return rows.map((r) => normalizeInsightRow(r, accountId));
 }
 
-// Una cuenta completa: jerarquía + gasto diario por mes. Las excepciones suben
+// Un tramo de insights. Si Meta no alcanza a calcularlo (code 1 / 2), se parte
+// a la mitad y se piden las mitades; un solo día que truene sí es un fallo.
+async function fetchInsightsRange(
+  token: string,
+  accountId: string,
+  since: string,
+  until: string
+): Promise<MetaDailyRow[]> {
+  try {
+    return await adInsightsDaily(token, accountId, since, until);
+  } catch (err) {
+    if (!(err instanceof MetaApiError) || !TOO_HEAVY_CODES.has(err.code)) throw err;
+    const halves = splitRange(since, until);
+    if (!halves) throw err;
+    console.warn(`[meta] ${accountId} insights ${since}..${until} demasiado pesado (code ${err.code}); se parte en dos`);
+    const [a, b] = await Promise.all(halves.map((h) => fetchInsightsRange(token, accountId, h.since, h.until)));
+    return [...a, ...b];
+  }
+}
+
+// Una cuenta completa: jerarquía + gasto diario por tramos de una semana. Las excepciones suben
 // al llamador, que decide si es la cuenta o el token lo que falló.
 async function fetchAccount(
   token: string,
@@ -225,12 +251,12 @@ async function fetchAccount(
 ) {
   const { kept, droppedIds } = filterAdsCreatedSince(await listAds(token, account.id), adsCreatedSince);
   onAds(kept.length);
-  const months = await runPool(monthChunks(window.since, window.until), MONTH_CONCURRENCY, (chunk) =>
-    adInsightsDaily(token, account.id, chunk.since, chunk.until)
+  const chunks = await runPool(dateChunks(window.since, window.until, INSIGHTS_CHUNK_DAYS), CHUNK_CONCURRENCY, (chunk) =>
+    fetchInsightsRange(token, account.id, chunk.since, chunk.until)
   );
   // Las filas de los anuncios descartados se van con ellos; las de un anuncio
   // que Graph ya no lista en /ads (borrado) se quedan: su gasto fue real.
-  const daily = months.flat().filter((d) => !droppedIds.has(d.adId));
+  const daily = chunks.flat().filter((d) => !droppedIds.has(d.adId));
   return {
     account: { id: account.id, name: account.name, currency: account.currency, timezone: account.timezone },
     hierarchy: normalizeAds(account.id, kept),
