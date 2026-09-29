@@ -40,7 +40,7 @@ import {
   type PanelFilters,
 } from "@/lib/panel-filters"
 import { buildPautaNamesByContact } from "@/lib/pauta-performance"
-import { buildMetaCampaignByAd } from "@/lib/meta-attribution"
+import { buildMetaCampaignByAd, buildMetaCampaignByOpp, buildMetaPanelContext } from "@/lib/meta-attribution"
 import { buildAgenciaOptions } from "@/lib/agencia"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -211,16 +211,36 @@ export default function DashboardPage() {
     () => new Map((data?.contacts ?? []).map((c) => [c.id, c])),
     [data?.contacts]
   )
-  // La campaña sale de Meta (por ad id, si está conectado), luego del objeto
-  // Pauta del contacto y luego del campo "Nombre Pauta" — ver resolveCampanas.
-  // Sin acotar a desarrollo ni a fecha: el filtro es global y el registro pudo
-  // crearse fuera de la ventana.
+  // El contexto de Meta (índice, lo aprendido de los leads, cuenta = desarrollo)
+  // se arma UNA vez sobre el set sin filtrar y baja a las siete pestañas.
+  const metaPanel = useMemo(
+    () =>
+      data?.metaAds
+        ? buildMetaPanelContext({
+            meta: data.metaAds,
+            allOpportunities: data.opportunities,
+            contacts: data.contacts,
+            pautas: data.pautas,
+            pipelines: data.pipelines,
+          })
+        : null,
+    [data?.metaAds, data?.opportunities, data?.contacts, data?.pautas, data?.pipelines]
+  )
+  // La campaña sale de Meta (por la cadena completa, si está conectado), luego
+  // del objeto Pauta del contacto y luego del campo "Nombre Pauta" — ver
+  // resolveCampanas. Sin acotar a desarrollo ni a fecha: el filtro es global y
+  // el registro pudo crearse fuera de la ventana.
   const campanaCtx = useMemo(
     () => ({
       pautaNamesByContact: buildPautaNamesByContact(data?.pautas ?? []),
       metaCampaignByAd: buildMetaCampaignByAd(data?.metaAds),
+      metaCampaignByOpp: metaPanel ? buildMetaCampaignByOpp(data?.opportunities ?? [], metaPanel.ctx) : null,
     }),
-    [data?.pautas, data?.metaAds]
+    [data?.pautas, data?.metaAds, data?.opportunities, metaPanel]
+  )
+  const metaWarning = useMemo(
+    () => data?.warnings?.find((w) => w.key === "meta") ?? null,
+    [data?.warnings]
   )
   const [panelFilters, setPanelFilters] = useState<PanelFilters>(EMPTY_PANEL_FILTERS)
   const scopedOpportunities = useMemo(
@@ -719,6 +739,9 @@ export default function DashboardPage() {
             locationName={locationName ?? undefined}
             periodLabel={periodLabel}
             dateRange={dateRange}
+            metaPanel={metaPanel}
+            metaWarning={metaWarning}
+            locationCreatedAt={data?.meta?.locationCreatedAt}
           />
         )}
         {/* Kept permanently mounted (hidden when inactive) so the AI chat

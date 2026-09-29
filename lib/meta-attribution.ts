@@ -34,7 +34,7 @@ import type {
 } from "./types";
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
 import { hadCita, reachedStage, stageIndexOf } from "./desarrollo-funnel";
-import { isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
+import { buildPautaNamesByContact, isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 
 /** Oportunidad de pauta sin ad id capturado: hueco de captura, en rojizo. */
@@ -815,4 +815,44 @@ export function buildPautaInvestment(p: PautaInvestmentInput): PautaInvestment {
   const unlinkedSpend = rows.get("")?.metrics.spend ?? 0;
 
   return { currency, mixedCurrency, kpi, campaigns, noAdId, unknownAd, otherAccount, notPauta, via, unlinkedSpend };
+}
+
+// ── El contexto por payload ─────────────────────────────────────────────────
+// Se arma UNA vez en app/page.tsx sobre el set sin filtrar y baja como prop:
+// siete pestañas no deben reconstruir el índice cada una.
+export interface MetaPanelContext {
+  meta: MetaAdsData;
+  index: MetaIndex;
+  ctx: AttributionContext;
+  desarrolloByAd: Map<string, string>;
+  mixedAds: string[];
+  accountToPipeline: Map<string, string>;
+}
+
+export function buildMetaPanelContext(p: {
+  meta: MetaAdsData;
+  allOpportunities: Opportunity[];
+  contacts: Contact[];
+  pautas: Pauta[];
+  pipelines: Pipeline[] | undefined;
+}): MetaPanelContext {
+  const index = buildMetaIndex(p.meta);
+  const contactById = new Map(p.contacts.map((c) => [c.id, c]));
+  const learned = buildLearnedIndex(p.allOpportunities, index, contactById);
+  const ctx: AttributionContext = {
+    index,
+    pautaContacts: buildPautaContacts(p.pautas),
+    pautaNamesByContact: buildPautaNamesByContact(p.pautas),
+    contactById,
+    learned,
+  };
+  const { byAd, mixed } = assignAdDesarrollos(p.meta, index, p.allOpportunities, p.pipelines);
+  return {
+    meta: p.meta,
+    index,
+    ctx,
+    desarrolloByAd: byAd,
+    mixedAds: mixed,
+    accountToPipeline: accountToPipeline(p.meta.accounts, p.pipelines),
+  };
 }

@@ -28,6 +28,7 @@ import {
   buildPautaInvestment,
   SIN_CAMPANA,
   ANUNCIO_ELIMINADO,
+  buildMetaPanelContext,
   type AttributionContext,
 } from "../lib/meta-attribution";
 import { buildPautaNamesByContact } from "../lib/pauta-performance";
@@ -426,6 +427,14 @@ async function main() {
   // --- sin rango = toda la ventana
   const invAll = buildPautaInvestment({ opportunities: cohort, daily: meta.daily, range: null, ctx, contactsWithCita, accountIds: null });
   assert.equal(invAll.kpi.spend, 390 + 999);
+
+  // --- el contexto que page.tsx arma una vez y baja a las siete pestañas
+  const panelCtx = buildMetaPanelContext({ meta, allOpportunities: opps, contacts: [], pautas, pipelines });
+  assert.equal(panelCtx.index.byAd.size, index.byAd.size);
+  assert.equal(panelCtx.desarrolloByAd.get("401"), "Palmyra");
+  assert.equal(panelCtx.accountToPipeline.get("act_3"), "Palmyra");
+  assert.equal(panelCtx.ctx.learned?.byUrl.size, 0, "opps sin URL no enseñan nada");
+  assert.deepEqual(classifyLead(opp({ id: "z", adId: "101" }), panelCtx.ctx), { kind: "ad", adId: "101", campaignId: "c1", via: "adId" });
 
   console.log("✅ verify:meta-attribution OK");
 }

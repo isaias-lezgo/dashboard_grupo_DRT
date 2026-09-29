@@ -9,8 +9,10 @@ import type {
   Appointment,
   Pipeline,
   Message,
+  SyncWarning,
 } from "@/lib/types"
 import type { ResolvedDateRange } from "@/lib/date-range"
+import type { MetaPanelContext } from "@/lib/meta-attribution"
 import type {
   ActivityMeta,
   ActivityProgress,
@@ -97,6 +99,12 @@ export interface PanelDashboardProps {
    * filter the `all*` sets themselves instead of using the pre-filtered props.
    */
   dateRange?: ResolvedDateRange | null
+  /** Índice y contexto de Meta Ads, armados una vez en page.tsx. null = sin conexión. */
+  metaPanel?: MetaPanelContext | null
+  /** El warning `meta` del último sync, si lo hubo (parcial, revocado, caído). */
+  metaWarning?: SyncWarning | null
+  /** ISO de creación de la subcuenta; ancla la ventana de gasto. */
+  locationCreatedAt?: string
 }
 
 export function PanelDashboard({
@@ -121,6 +129,10 @@ export function PanelDashboard({
   allAppointments = [],
   messages = [],
   locationId,
+  dateRange = null,
+  metaPanel = null,
+  metaWarning = null,
+  locationCreatedAt,
 }: PanelDashboardProps) {
   // Todo lo que los gráficos por-oportunidad necesitan es idéntico, así que se
   // arma una sola vez y se derrama. Mantén ese patrón en vez de volver a listar
