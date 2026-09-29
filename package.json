@@ -31,6 +31,7 @@
     "verify:meta-attribution": "tsx scripts/verify-meta-attribution.ts",
     "verify:leads-per-day": "tsx scripts/verify-leads-per-day.ts",
     "verify:pauta-performance": "tsx scripts/verify-pauta-performance.ts",
+    "verify:slim": "tsx scripts/verify-slim.ts",
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/db-migrate.ts",
     "add-client": "tsx scripts/add-client.ts"
   },

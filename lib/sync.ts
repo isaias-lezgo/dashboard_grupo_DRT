@@ -27,6 +27,7 @@ import {
 } from "@/lib/ghl-client";
 import { withClient } from "@/lib/ghl-context";
 import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
+import { slimContact, slimOpportunity } from "@/lib/sync-slim";
 import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
 import { historyWindow } from "@/lib/meta-normalize";
 import { deletedUserLabel } from "@/lib/panel-filters";
@@ -725,14 +726,14 @@ export async function syncProject(
 
     // Transform contacts
     const contacts: Contact[] = contactsRaw.map((c) => {
-      const contact = transformContact(c, customFieldMap);
+      const contact = slimContact(transformContact(c, customFieldMap));
       contact.assignedTo = resolveUserName(userMap, contact.assignedTo);
       return contact;
     });
 
     // Transform opportunities
     const opportunities: Opportunity[] = opportunitiesRaw.map((o) => {
-      const opp = transformOpportunity(o, pipelineMap, customFieldMap, lostReasonMap);
+      const opp = slimOpportunity(transformOpportunity(o, pipelineMap, customFieldMap, lostReasonMap));
       opp.assignedTo = resolveUserName(userMap, opp.assignedTo);
       return opp;
     });
