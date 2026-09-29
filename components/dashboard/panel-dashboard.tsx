@@ -154,20 +154,18 @@ export function PanelDashboard({
 
   return (
     <DashboardShell>
-      {/* La cabecera de GENERAL: los tres recuentos por desarrollo y el embudo
-          de la estrategia. Solo aquí: dentro de un desarrollo "por desarrollo"
-          tiene una sola barra, y el embudo del desarrollo ya lo cuenta la
-          tabla por asesor etapa por etapa. */}
+      {/* La cabecera de GENERAL: los tres recuentos por desarrollo. Solo aquí:
+          dentro de un desarrollo "por desarrollo" tiene una sola barra. */}
       {panel === "general" && (
-        <>
-          <div className="grid gap-5 lg:grid-cols-3">
-            <RegistrosPorDesarrolloChart {...shared} />
-            <VisitasPorDesarrolloChart {...shared} />
-            <VentasPorDesarrolloChart {...shared} />
-          </div>
-          <StageFunnelChart {...shared} allAppointments={allAppointments} />
-        </>
+        <div className="grid gap-5 lg:grid-cols-3">
+          <RegistrosPorDesarrolloChart {...shared} />
+          <VisitasPorDesarrolloChart {...shared} />
+          <VentasPorDesarrolloChart {...shared} />
+        </div>
       )}
+      {/* El embudo de la estrategia, en las siete pestañas (desde 2026-09-29,
+          pedido del cliente): se acota solo al pipeline de la pestaña. */}
+      <StageFunnelChart {...shared} allAppointments={allAppointments} />
       {/* "Oportunidades por estado" (opportunity-status-chart.tsx) ya no se monta
           (2026-09-14, pedido del cliente); el archivo se conserva por si vuelve. */}
       <AdvisorStageTable {...shared} />
