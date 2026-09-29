@@ -574,6 +574,77 @@ export async function syncProject(
     }
     sendStep("config", "done");
 
+    // ── Meta Ads ──────────────────────────────────────────────────────────
+    // Corre EN PARALELO con los datasets de GHL: son APIs distintas y la
+    // ventana ya no depende de las oportunidades sino del dateAdded de la
+    // subcuenta (locationPromise, ~1 s). En serie eran 114 s de GHL + 102 s de
+    // Meta (medido en producción 2026-09-29); en paralelo manda el más lento.
+    // Sin conexión no se emite el paso: eso no es un error, es que nadie ha
+    // apretado "Conectar con Meta".
+    const metaPromise = (async (): Promise<{ metaAds: MetaAdsData | null; metaWarning: SyncWarning | null }> => {
+      const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
+        send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
+
+      // La ventana de Meta se ancla en la creación de la subcuenta, así que la
+      // resolución de /locations tiene que haber terminado antes de pedir gasto.
+      await locationPromise;
+
+      let metaAds: MetaAdsData | null = null;
+      let metaWarning: SyncWarning | null = null;
+      // El token solo se descifra aquí y nunca sale de este bloque.
+      const metaConn = await readMetaConnectionWithToken(client, "ads").catch((err) => {
+        console.error("[meta] no se pudo leer la conexión, se sincroniza sin Meta:", err);
+        return null;
+      });
+      if (metaConn && metaConn.token === null) {
+        // Hay fila pero el blob no descifra (DASHBOARD_AUTH_SECRET rotado). Callar
+        // aquí dejaría la píldora en "conectado" y el gasto congelado sin aviso.
+        metaStep("error", 0);
+        metaWarning = { key: "meta", kind: "error", loaded: 0, reason: "token_unreadable" };
+      } else if (metaConn && metaConn.token !== null) {
+        const metaToken = metaConn.token;
+        metaStep("loading", 0);
+        const today = new Intl.DateTimeFormat("en-CA", {
+          timeZone: PANEL_TIME_ZONE,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+        const selected = new Set(metaConn.selectedAccounts);
+        try {
+          metaAds = await fetchMetaAds({
+            token: metaToken,
+            accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
+            window: historyWindow(locationCreatedAt, today),
+            adsCreatedSince: locationCreatedAt ? locationCreatedAt.slice(0, 10) : null,
+            onProgress: (n) => metaStep("loading", n),
+          });
+          if (metaAds.failedAccounts.length > 0) {
+            metaStep("partial", metaAds.ads.length);
+            metaWarning = {
+              key: "meta",
+              kind: "partial",
+              loaded: metaAds.ads.length,
+              reason: metaAds.failedAccounts.map((f) => f.id).join(","),
+            };
+          } else {
+            metaStep("done", metaAds.ads.length);
+          }
+        } catch (err) {
+          console.error("[meta] el sync de Meta Ads falló:", err instanceof Error ? err.message : String(err));
+          metaStep("error", 0);
+          metaAds = null;
+          metaWarning = {
+            key: "meta",
+            kind: "error",
+            loaded: 0,
+            reason: err instanceof MetaApiError && err.isTokenInvalid ? "token_revoked" : "failed",
+          };
+        }
+      }
+      return { metaAds, metaWarning };
+    })();
+
     // Contacts, opportunities, pautas, appointments and tasks are all
     // independent of one another — only the transforms afterward depend on
     // the lookup maps built above. Fetch them concurrently and let the
@@ -736,70 +807,8 @@ export async function syncProject(
       }
     }
 
-    // ── Meta Ads ──────────────────────────────────────────────────────────
-    // La ventana de historia se ancla en el dateAdded de la subcuenta (resuelto
-    // por locationPromise, abajo se espera). Sin conexión no se emite el paso:
-    // eso no es un error, es que nadie ha apretado "Conectar con Meta".
-    const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
-      send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
-
-    // La ventana de Meta se ancla en la creación de la subcuenta, así que la
-    // resolución de /locations tiene que haber terminado antes de pedir gasto.
-    await locationPromise;
-
-    let metaAds: MetaAdsData | null = null;
-    let metaWarning: SyncWarning | null = null;
-    // El token solo se descifra aquí y nunca sale de este bloque.
-    const metaConn = await readMetaConnectionWithToken(client, "ads").catch((err) => {
-      console.error("[meta] no se pudo leer la conexión, se sincroniza sin Meta:", err);
-      return null;
-    });
-    if (metaConn && metaConn.token === null) {
-      // Hay fila pero el blob no descifra (DASHBOARD_AUTH_SECRET rotado). Callar
-      // aquí dejaría la píldora en "conectado" y el gasto congelado sin aviso.
-      metaStep("error", 0);
-      metaWarning = { key: "meta", kind: "error", loaded: 0, reason: "token_unreadable" };
-    } else if (metaConn && metaConn.token !== null) {
-      const metaToken = metaConn.token;
-      metaStep("loading", 0);
-      const today = new Intl.DateTimeFormat("en-CA", {
-        timeZone: PANEL_TIME_ZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date());
-      const selected = new Set(metaConn.selectedAccounts);
-      try {
-        metaAds = await fetchMetaAds({
-          token: metaToken,
-          accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
-          window: historyWindow(locationCreatedAt, today),
-          adsCreatedSince: locationCreatedAt ? locationCreatedAt.slice(0, 10) : null,
-          onProgress: (n) => metaStep("loading", n),
-        });
-        if (metaAds.failedAccounts.length > 0) {
-          metaStep("partial", metaAds.ads.length);
-          metaWarning = {
-            key: "meta",
-            kind: "partial",
-            loaded: metaAds.ads.length,
-            reason: metaAds.failedAccounts.map((f) => f.id).join(","),
-          };
-        } else {
-          metaStep("done", metaAds.ads.length);
-        }
-      } catch (err) {
-        console.error("[meta] el sync de Meta Ads falló:", err instanceof Error ? err.message : String(err));
-        metaStep("error", 0);
-        metaAds = null;
-        metaWarning = {
-          key: "meta",
-          kind: "error",
-          loaded: 0,
-          reason: err instanceof MetaApiError && err.isTokenInvalid ? "token_revoked" : "failed",
-        };
-      }
-    }
+    // Meta corrió en paralelo con los datasets de GHL (arriba); aquí solo se recoge.
+    const { metaAds, metaWarning } = await metaPromise;
     if (metaWarning) warnings.push(metaWarning);
 
     // Conversations/messages are fetched separately by /api/dashboard-messages
