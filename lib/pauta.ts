@@ -4,6 +4,7 @@
 // not re-inline isPaidTraffic / isDePauta / resolveCampaignName elsewhere.
 
 import type { Opportunity, Pauta } from "@/lib/types"
+import { normalizeDesarrolloName } from "@/lib/panel-scope"
 
 // Paid-traffic source/medium vocabularies. Social + search together — an
 // opportunity is "paid traffic" if its GHL source or ad medium matches any of
@@ -105,6 +106,31 @@ export function buildPautaNameByContact(pautas: Pauta[]): Map<string, string> {
       return n && n !== "Sin nombre"
     })
     if (named) m.set(contactId, named.nombrePauta.trim())
+  }
+  return m
+}
+
+/**
+ * contactId → nombres DISTINTOS de sus Pautas, en orden de aparición. Se arma
+ * sobre las Pautas SIN filtrar: el registro pudo crearse fuera de la ventana que
+ * pone a la oportunidad en pantalla, y perderlo la mandaría a "sin Pauta" por
+ * un accidente del filtro. `desarrollo` acota a las Pautas de ese pipeline
+ * (propiedad `desarrollo` del registro). Vive aquí (nació en
+ * pauta-performance) para que lib/meta-attribution.ts la importe sin ciclo.
+ */
+export function buildPautaNamesByContact(
+  pautas: Pauta[],
+  desarrollo?: string | null
+): Map<string, string[]> {
+  const wanted = desarrollo ? normalizeDesarrolloName(desarrollo) : null
+  const m = new Map<string, string[]>()
+  for (const p of pautas) {
+    if (!p.contactId) continue
+    if (wanted !== null && normalizeDesarrolloName(p.properties?.desarrollo ?? "") !== wanted) continue
+    const name = p.nombrePauta?.trim() || SIN_NOMBRE_CAMPAIGN
+    const arr = m.get(p.contactId) ?? []
+    if (!arr.includes(name)) arr.push(name)
+    m.set(p.contactId, arr)
   }
   return m
 }

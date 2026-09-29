@@ -26,10 +26,9 @@
 // scripts/verify-pauta-performance.ts.
 import type { Appointment, Opportunity, Pauta } from "./types"
 import { isWonOpp } from "./opportunity-status"
-import { SIN_NOMBRE_CAMPAIGN } from "./pauta"
-import { reachedStage } from "./desarrollo-funnel"
+import { SIN_NOMBRE_CAMPAIGN, buildPautaNamesByContact } from "./pauta"
+import { hadCita, reachedStage } from "./desarrollo-funnel"
 import { oppAdId } from "./meta-attribution"
-import { normalizeDesarrolloName } from "./panel-scope"
 
 export const PAUTA_METRICS = ["leads", "citas", "ventas", "perdidos"] as const
 export type PautaMetric = (typeof PAUTA_METRICS)[number]
@@ -91,21 +90,10 @@ export interface PautaPerformance {
   universe: number
 }
 
-const CITA = { key: "cita", minIndex: 4 }
-
-/**
- * La misma regla que "Citas agendadas" del embudo de GENERAL: etapa actual
- * `≥04`, o ganada (una venta implica cita — el embudo es monótono), o el
- * contacto tiene una cita en el objeto Citas, cualquier estatus y sin filtrar
- * por fecha.
- */
-export function hadCita(opp: Opportunity, contactsWithCita: ReadonlySet<string>): boolean {
-  return (
-    reachedStage(opp, CITA) ||
-    isWonOpp(opp) ||
-    (!!opp.contactId && contactsWithCita.has(opp.contactId))
-  )
-}
+// Se mudó a lib/desarrollo-funnel.ts para que lib/meta-attribution.ts pueda
+// usarla sin un ciclo de imports (este módulo importa oppAdId de ahí).
+// Re-exportada por compatibilidad.
+export { hadCita } from "./desarrollo-funnel"
 
 /** Perdida o abandonada — la cubeta "perdida" de statusBucket, sin importar la etapa. */
 export function isPerdida(opp: Opportunity): boolean {
@@ -120,28 +108,8 @@ function emptyCells(): Record<PautaMetric, PautaCell> {
   return { leads: emptyCell(), citas: emptyCell(), ventas: emptyCell(), perdidos: emptyCell() }
 }
 
-/**
- * contactId → nombres DISTINTOS de sus Pautas, en orden de aparición. Se arma
- * sobre las Pautas SIN filtrar: el registro pudo crearse fuera de la ventana que
- * pone a la oportunidad en pantalla, y perderlo la mandaría a "sin Pauta" por
- * un accidente del filtro.
- */
-export function buildPautaNamesByContact(
-  pautas: Pauta[],
-  desarrollo?: string | null
-): Map<string, string[]> {
-  const wanted = desarrollo ? normalizeDesarrolloName(desarrollo) : null
-  const m = new Map<string, string[]>()
-  for (const p of pautas) {
-    if (!p.contactId) continue
-    if (wanted !== null && normalizeDesarrolloName(p.properties?.desarrollo ?? "") !== wanted) continue
-    const name = p.nombrePauta?.trim() || SIN_NOMBRE_CAMPAIGN
-    const arr = m.get(p.contactId) ?? []
-    if (!arr.includes(name)) arr.push(name)
-    m.set(p.contactId, arr)
-  }
-  return m
-}
+// Se mudó a lib/pauta.ts por la misma razón que hadCita. Re-exportada.
+export { buildPautaNamesByContact } from "./pauta"
 
 /**
  * `opps` es el universo ya acotado (embudo de la pestaña + fecha); `pautas` y

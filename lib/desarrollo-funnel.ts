@@ -39,8 +39,24 @@ export function reachedStage(
   return idx !== null && idx >= target.minIndex
 }
 
+const CITA = { key: "cita", minIndex: 4 }
 const VISITA = { key: "visita", minIndex: 5 }
 const VENTA = { key: "venta", minIndex: 8 }
+
+/**
+ * La misma regla que "Citas agendadas" del embudo de GENERAL: etapa actual
+ * `≥04`, o ganada (una venta implica cita — el embudo es monótono), o el
+ * contacto tiene una cita en el objeto Citas, cualquier estatus y sin filtrar
+ * por fecha. Vive aquí (y no en pauta-performance, donde nació) para que
+ * lib/meta-attribution.ts la importe sin ciclo.
+ */
+export function hadCita(opp: Opportunity, contactsWithCita: ReadonlySet<string>): boolean {
+  return (
+    reachedStage(opp, CITA) ||
+    isWonOpp(opp) ||
+    (!!opp.contactId && contactsWithCita.has(opp.contactId))
+  )
+}
 
 // ── Recuentos por desarrollo ────────────────────────────────────────────────
 
