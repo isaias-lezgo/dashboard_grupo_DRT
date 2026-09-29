@@ -23,20 +23,63 @@ export function stageIndexOf(stage: string | undefined): number | null {
 }
 
 /**
+ * La escalera del embudo, por PALABRA de la etapa, no por número. GHL renombró
+ * los seis pipelines el 2026-09 (antes "00. Recibido … 08. Venta" con laterales
+ * "Negocio perdido"; ahora "01. Recibido | 02. Seguimiento | 03. Cita |
+ * 04. Visita | 05. Apartado | 06. Venta | 07. Perdido"). Con el prefijo
+ * numérico, "07. Perdido" contaba como visita y apartado en todo el panel. La
+ * palabra sobrevive a la renumeración; el número queda de respaldo para una
+ * etapa sin palabra conocida. Una etapa de perdido / abandonado / inversión
+ * futura no está en la escalera: no dice hasta dónde llegó el lead.
+ */
+const STAGE_LADDER: { re: RegExp; rung: number | null }[] = [
+  { re: /perdid|abandon|futur/i, rung: null },
+  { re: /venta|ganad/i, rung: 8 },
+  { re: /apartad/i, rung: 7 },
+  { re: /negoci/i, rung: 6 },
+  { re: /visita/i, rung: 5 },
+  { re: /cita/i, rung: 4 },
+  { re: /calific/i, rung: 3 },
+  { re: /seguim/i, rung: 2 },
+  { re: /contact/i, rung: 1 },
+  { re: /recib/i, rung: 0 },
+]
+
+/** Peldaño alcanzado por la etapa actual: por palabra, luego por número, luego nada. */
+export function stageRungOf(stage: string | undefined): number | null {
+  const name = stage ?? ""
+  for (const step of STAGE_LADDER) if (step.re.test(name)) return step.rung
+  return stageIndexOf(name)
+}
+
+/** Peldaño mínimo de cada objetivo del embudo. "venta" no está: es isWonOpp(). */
+const TARGET_RUNG: Record<string, number> = {
+  contactado: 1,
+  precalificado: 2,
+  cita: 4,
+  visita: 5,
+  apartado: 7,
+}
+
+/**
  * La etapa actual está en o después del objetivo.
  *
- * "Venta" NO usa el prefijo: es isWonOpp() y nada más, porque esa es la
+ * "Venta" NO usa la escalera: es isWonOpp() y nada más, porque esa es la
  * definición canónica de venta en todo el panel. Cubre a la ganada por `status`
- * que nadie movió a "08." y, al revés, excluye a la perdida que se quedó
- * sentada en "08. Venta" — que por prefijo contaría como venta cerrada.
+ * que nadie movió a "Venta" y, al revés, excluye a la perdida que se quedó
+ * sentada en "Venta" — que por nombre contaría como venta cerrada.
+ *
+ * `minIndex` se conserva en la firma por compatibilidad y solo manda cuando la
+ * llave no está en TARGET_RUNG.
  */
 export function reachedStage(
   opp: Opportunity,
-  target: { key: string; minIndex: number }
+  target: { key: string; minIndex?: number }
 ): boolean {
   if (target.key === "venta") return isWonOpp(opp)
-  const idx = stageIndexOf(opp.stage)
-  return idx !== null && idx >= target.minIndex
+  const rung = stageRungOf(opp.stage)
+  const min = TARGET_RUNG[target.key] ?? target.minIndex
+  return rung !== null && min !== undefined && rung >= min
 }
 
 const CITA = { key: "cita", minIndex: 4 }

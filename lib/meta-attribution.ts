@@ -238,9 +238,16 @@ export function adIdCandidates(opp: Opportunity, contactById?: ReadonlyMap<strin
   ]);
 }
 
-/** Sin espacios, sin query ni fragmento, sin "/" final. fb.me distingue mayúsculas: no se pliega. */
+/**
+ * Sin espacios, sin query ni fragmento, sin "/" final. fb.me distingue
+ * mayúsculas: no se pliega. Solo URLs de verdad (`http(s)://…`): Make escribe
+ * "-" y a veces el NOMBRE del anuncio en "URL Pauta" (4 008 de 8 943 valores
+ * medidos 2026-09-28), y un "-" aprendido como URL ató 578 leads a un anuncio
+ * ajeno. Lo que no es URL devuelve "" y se descarta.
+ */
 export function normalizeUrl(u: string): string {
-  return u.trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  const s = u.trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  return /^https?:\/\/[^/]+\/.+/i.test(s) ? s : "";
 }
 
 export function urlCandidates(opp: Opportunity, contactById?: ReadonlyMap<string, Contact>): string[] {
@@ -279,7 +286,12 @@ export function nameCandidates(
 // filtrar, como assignAdDesarrollos; las importaciones no enseñan nada.
 
 export interface LearnedIndex {
-  byUrl: Map<string, { ads: Set<string>; campaigns: Set<string> }>;
+  /**
+   * `ads`/`campaigns`: anuncios y campañas NUESTROS vistos con esa URL.
+   * `foreign`: ad ids que Meta no conoce, vistos con la misma URL — una URL
+   * compartida con un anuncio de una cuenta no conectada no identifica nada.
+   */
+  byUrl: Map<string, { ads: Set<string>; campaigns: Set<string>; foreign: Set<string> }>;
   /** ad id con gasto pero fuera de /ads → campaña, según el utmCampaignId de sus leads. */
   campaignOfDeletedAd: Map<string, string>;
 }
@@ -298,8 +310,18 @@ export function buildLearnedIndex(
   const campaignOfDeletedAd = new Map<string, string>();
   for (const o of allOpportunities) {
     if (isImported(o)) continue;
-    const adId = adIdCandidates(o, contactById).find((id) => knownAd(index, id));
-    if (!adId) continue;
+    const ids = adIdCandidates(o, contactById);
+    if (ids.length === 0) continue;
+    const adId = ids.find((id) => knownAd(index, id));
+    if (!adId) {
+      // Ad de otra cuenta: no enseña anuncio, pero sí marca sus URLs como ajenas.
+      for (const u of urlCandidates(o, contactById)) {
+        const e = byUrl.get(u) ?? { ads: new Set<string>(), campaigns: new Set<string>(), foreign: new Set<string>() };
+        e.foreign.add(ids[0]);
+        byUrl.set(u, e);
+      }
+      continue;
+    }
     let campaignId = index.byAd.get(adId)?.campaign?.id;
     if (!campaignId) {
       const cid = attrsOf(o, contactById)
@@ -311,7 +333,7 @@ export function buildLearnedIndex(
       }
     }
     for (const u of urlCandidates(o, contactById)) {
-      const e = byUrl.get(u) ?? { ads: new Set<string>(), campaigns: new Set<string>() };
+      const e = byUrl.get(u) ?? { ads: new Set<string>(), campaigns: new Set<string>(), foreign: new Set<string>() };
       e.ads.add(adId);
       if (campaignId) e.campaigns.add(campaignId);
       byUrl.set(u, e);
@@ -366,11 +388,17 @@ export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAtt
     if (cid && ctx.index.campaignsById.has(cid)) return { kind: "campaign", campaignId: cid, via: "campaignId" };
   }
 
+  // Con un ad id propio que Meta no conoce, la URL y el nombre ya no opinan:
+  // es un anuncio de una cuenta no conectada, no un hueco que rellenar. Sin
+  // esta salida, 1 014 leads de Cañadas (cuenta caída) se ataban por URL a
+  // anuncios de Palmyra (medido 2026-09-28).
+  if (ids.length > 0) return { kind: "unknownAd", adId: ids[0] };
+
   // 3. la URL con la que entró, si otros leads enseñaron de qué anuncio es.
   if (ctx.learned) {
     for (const u of urlCandidates(opp, ctx.contactById)) {
       const e = ctx.learned.byUrl.get(u);
-      if (!e) continue;
+      if (!e || e.foreign.size > 0) continue;
       if (e.ads.size === 1) {
         const adId = [...e.ads][0];
         return { kind: "ad", adId, campaignId: campaignOfAd(ctx, adId), via: "url" };
@@ -392,7 +420,6 @@ export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAtt
     }
   }
 
-  if (ids.length > 0) return { kind: "unknownAd", adId: ids[0] };
   return isDePauta(opp, ctx.pautaContacts) || names.length > 0 ? { kind: "noAdId" } : { kind: "notPauta" };
 }
 

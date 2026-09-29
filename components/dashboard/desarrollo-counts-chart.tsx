@@ -237,11 +237,11 @@ export function VisitasPorDesarrolloChart(props: ConfiguredProps) {
       title="Visitas por desarrollo"
       icon={Footprints}
       measure="visitas"
-      scopeLabel="Etapa ≥ 05."
+      scopeLabel="Etapa Visita o después"
       scopeTooltip={
         <>
-          Oportunidades cuya etapa actual es <strong>05. Visita al Desarrollo</strong> o
-          posterior (Negociación, Apartado, Venta), o ganada: una venta implica visita. Una
+          Oportunidades cuya etapa actual es <strong>Visita</strong> o
+          posterior (Apartado, Venta), o ganada: una venta implica visita. Una
           perdida que llegó hasta ahí sí visitó y cuenta. Es el mismo número que "Visitas
           realizadas" en el embudo. El porcentaje es sobre los registros del mismo desarrollo.
         </>
@@ -261,7 +261,7 @@ export function VentasPorDesarrolloChart(props: ConfiguredProps) {
       scopeTooltip={
         <>
           Oportunidades ganadas: con estatus <em>won</em> o en la etapa{" "}
-          <strong>08. Venta</strong> sin estar perdidas. Se cuentan las dos señales porque en
+          <strong>Venta</strong> sin estar perdidas. Se cuentan las dos señales porque en
           esta cuenta hay ventas registradas solo por etapa. El porcentaje es sobre los
           registros del mismo desarrollo.
         </>

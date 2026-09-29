@@ -122,9 +122,10 @@ export function StageFunnelChart({
             tooltip={
               <>
                 Cada paso cuenta las oportunidades del embudo <strong>{scope.label}</strong> cuya
-                etapa actual es esa o una posterior: una perdida en <em>05. Visita</em> sí contó
-                como cita y como visita. <strong>Precalificados</strong> es <em>02. Lead en
-                Seguimiento</em> en adelante; <strong>Citas agendadas</strong> suma además a
+                etapa actual es esa o una posterior (por el nombre de la etapa, no por su
+                número): una perdida en <em>Visita</em> sí contó como cita y como visita, y una
+                en la etapa <em>Perdido</em> no cuenta en ningún paso.{" "}
+                <strong>Precalificados</strong> es <em>Seguimiento</em> en adelante; <strong>Citas agendadas</strong> suma además a
                 quien tiene una cita en el calendario del CRM aunque su oportunidad no se haya
                 movido (ver el ⓘ de esa fila); <strong>Ventas</strong> son las ganadas. Alcanzar
                 un paso implica los anteriores, así que el embudo nunca se ensancha.
@@ -230,7 +231,7 @@ function CitasInfo({ fuentes }: { fuentes: NonNullable<FunnelStep["fuentes"]> })
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-[18rem] text-xs leading-relaxed">
           Una oportunidad cuenta como cita agendada si <strong>cualquiera</strong> de dos
-          señales se cumple: su etapa es <em>04. Cita Programada</em> o posterior (
+          señales se cumple: su etapa es <em>Cita</em> o posterior (
           {fuentes.porEtapa.toLocaleString("es-MX")}), o su contacto tiene una cita en el objeto{" "}
           <strong>Citas</strong> del CRM, con cualquier estatus, aunque la oportunidad siga en
           una etapa anterior ({fuentes.soloPorCita.toLocaleString("es-MX")} solo por esta vía).

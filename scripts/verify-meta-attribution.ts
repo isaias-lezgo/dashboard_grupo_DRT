@@ -163,6 +163,12 @@ async function main() {
   ]);
   assert.equal(normalizeUrl(" https://fb.me/Abc/?x=1#y "), "https://fb.me/Abc");
   assert.deepEqual(adIdCandidates(opp({ id: "nada" })), []);
+  // Solo URLs de verdad: Make escribe "-" y a veces el NOMBRE del anuncio en "URL Pauta"
+  // (medido 2026-09-28: 4 008 de 8 943 valores sin http). Sin este filtro, "-" se
+  // aprendía como URL y ataba 578 leads a un anuncio de Palmyra.
+  assert.deepEqual(urlCandidates(opp({ id: "u1", customFieldsResolved: { "URL Pauta": "-" } })), []);
+  assert.deepEqual(urlCandidates(opp({ id: "u2", customFieldsResolved: { "URL Pauta": "FORMS | ENERO | LA SIERRA - VIDEO 1" } })), []);
+  assert.deepEqual(urlCandidates(opp({ id: "u3", attributionUrl: "fb.me/sinEsquema" })), []);
 
   // --- lo aprendido de los leads: URL → anuncio/campaña, y la campaña de un anuncio borrado
   const learned = buildLearnedIndex(
@@ -179,10 +185,26 @@ async function main() {
   assert.deepEqual([...learned.byUrl.get("https://fb.me/UNO")!.ads].sort(), ["101", "102"], "una URL, dos anuncios de la misma campaña");
   assert.deepEqual([...learned.byUrl.get("https://fb.me/UNO")!.campaigns], ["c1"]);
   assert.deepEqual([...learned.byUrl.get("https://fb.me/DOS")!.ads], ["201"]);
-  assert.equal(learned.byUrl.has("https://fb.me/NADIE"), false, "un ad id que no está en Meta no enseña nada");
+  assert.deepEqual([...learned.byUrl.get("https://fb.me/NADIE")!.foreign], ["9999"], "un ad id que no está en Meta no enseña anuncio, pero marca la URL como ajena");
+  assert.equal(learned.byUrl.get("https://fb.me/NADIE")!.ads.size, 0);
   assert.equal(learned.byUrl.has("https://fb.me/CSV"), false, "una importación no enseña nada");
   assert.deepEqual([...learned.byUrl.get("https://fb.me/DEL")!.ads], ["777"], "el anuncio borrado tiene gasto: sí es nuestro");
   assert.equal(learned.campaignOfDeletedAd.get("777"), "c1", "la campaña del borrado sale del utmCampaignId de su lead");
+  // Un ad id que Meta NO conoce también enseña: marca la URL como ajena. Una URL
+  // compartida por un anuncio nuestro y uno de una cuenta no conectada NO
+  // identifica al nuestro (medido 2026-09-28: fb.me/9g0MEa8TO ataba 131 leads de
+  // Cañadas, cuenta no conectada, a un anuncio de Palmyra).
+  const learnedMix = buildLearnedIndex(
+    [
+      opp({ id: "M1", adId: "101", attributionUrl: "https://fb.me/MIX" }),
+      opp({ id: "M2", adId: "8888", attributionUrl: "https://fb.me/MIX" }),
+      opp({ id: "M3", adId: "8888", attributionUrl: "https://fb.me/AJENA" }),
+    ],
+    index
+  );
+  assert.deepEqual([...learnedMix.byUrl.get("https://fb.me/MIX")!.ads], ["101"]);
+  assert.deepEqual([...learnedMix.byUrl.get("https://fb.me/MIX")!.foreign], ["8888"], "la URL vio un ad id que no es nuestro");
+  assert.deepEqual([...learnedMix.byUrl.get("https://fb.me/AJENA")!.foreign], ["8888"]);
 
   // --- clasificación: cuatro niveles, cada uno solo si el anterior no dio nada
   const ctxContacts = new Map<string, Contact>([
@@ -235,6 +257,18 @@ async function main() {
   assert.deepEqual(
     classifyLead(opp({ id: "3c", contactId: "c-U", source: undefined }), ctx),
     { kind: "ad", adId: "201", campaignId: "c2", via: "url" }, "la URL puede venir del contacto"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "3d", attributionUrl: "https://fb.me/MIX" }), { ...ctx, learned: learnedMix }),
+    { kind: "noAdId" }, "una URL que también usó un anuncio ajeno no identifica nada"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "3e", adId: "9999", attributionUrl: "https://fb.me/DOS" }), ctx),
+    { kind: "unknownAd", adId: "9999" }, "con un ad id propio que Meta no conoce, la URL ya no opina: es un anuncio de otra cuenta"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "3f", adId: "9999", customFieldsResolved: { "Nombre Pauta": "PALMYRA | MAYO | PERFILES" } }), ctx),
+    { kind: "unknownAd", adId: "9999" }, "ídem para el nombre"
   );
   // nivel 4: nombres
   assert.deepEqual(

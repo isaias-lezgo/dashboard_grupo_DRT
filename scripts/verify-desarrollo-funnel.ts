@@ -76,6 +76,30 @@ function main() {
     assert.equal(reachedStage(opp({ stage: "04. Cita Programada" }), visita), false);
     assert.equal(reachedStage(opp({ stage: "02. Lead en Seguimiento", status: "won" }), venta), true, "status won es venta aunque la etapa no");
     assert.equal(reachedStage(opp({ stage: "08. Venta", status: "lost" }), venta), false, "una perdida en 08. no es venta");
+
+    // GHL renombró las etapas (medido 2026-09-28): 01. Recibido | 02. Seguimiento |
+    // 03. Cita | 04. Visita | 05. Apartado | 06. Venta | 07. Perdido. "Alcanzó" se
+    // lee por la PALABRA de la etapa, no por el número: con el número, "07. Perdido"
+    // contaba como visita y como apartado en todo el panel.
+    const cita = { key: "cita", minIndex: 4 };
+    const apartado = { key: "apartado", minIndex: 7 };
+    const precalificado = { key: "precalificado", minIndex: 2 };
+    assert.equal(reachedStage(opp({ stage: "07. Perdido", status: "lost" }), visita), false, "una etapa 'Perdido' no es visita aunque su número diga 07");
+    assert.equal(reachedStage(opp({ stage: "07. Perdido", status: "lost" }), apartado), false);
+    assert.equal(reachedStage(opp({ stage: "04. Visita" }), visita), true);
+    assert.equal(reachedStage(opp({ stage: "04. Visita" }), apartado), false, "con el número viejo (≥07) daba false, con el nuevo (04) también: es por palabra");
+    assert.equal(reachedStage(opp({ stage: "05. Apartado", status: "lost" }), visita), true, "una perdida en Apartado sí visitó, con los nombres nuevos");
+    assert.equal(reachedStage(opp({ stage: "05. Apartado" }), apartado), true);
+    assert.equal(reachedStage(opp({ stage: "03. Cita" }), cita), true);
+    assert.equal(reachedStage(opp({ stage: "03. Cita" }), visita), false);
+    assert.equal(reachedStage(opp({ stage: "02. Seguimiento" }), precalificado), true, "Seguimiento es el primer paso después de Recibido");
+    assert.equal(reachedStage(opp({ stage: "02. Seguimiento" }), cita), false);
+    assert.equal(reachedStage(opp({ stage: "01. Recibido" }), precalificado), false);
+    assert.equal(reachedStage(opp({ stage: "06. Venta" }), venta), true, "06. Venta es venta por nombre (isWonOpp)");
+    assert.equal(reachedStage(opp({ stage: "06. Venta" }), apartado), true, "y por tanto también apartado");
+    assert.equal(reachedStage(opp({ stage: "Negocio perdido", status: "lost" }), cita), false);
+    // Una etapa sin palabra conocida cae al prefijo numérico, como antes.
+    assert.equal(reachedStage(opp({ stage: "05. Etapa rara" }), visita), true, "sin palabra clave manda el número");
   }
 
   // 2. Recuentos por desarrollo: una sola agregación, tres columnas.
