@@ -258,7 +258,6 @@ export interface MetaDailyRow {
   date: string
   spend: number
   impressions: number
-  reach: number
   clicks: number
   linkClicks: number
   /** action_type "lead": formularios → source "Pauta Formulario". */

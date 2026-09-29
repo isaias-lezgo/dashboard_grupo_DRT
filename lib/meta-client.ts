@@ -212,7 +212,10 @@ async function adInsightsDaily(
       level: "ad",
       time_increment: "1",
       time_range: JSON.stringify({ since, until }),
-      fields: "ad_id,date_start,spend,impressions,reach,clicks,inline_link_clicks,actions",
+      // Sin `reach`: no se muestra en ningún lado y es una métrica de únicos
+      // que pesa en ~22 000 filas (medido 2026-09-29: no era el cuello de la
+      // latencia, pero tampoco aporta nada).
+      fields: "ad_id,date_start,spend,impressions,clicks,inline_link_clicks,actions",
       limit: "500",
     },
     token

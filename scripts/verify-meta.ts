@@ -27,7 +27,6 @@ async function main() {
     date_start: "2026-09-01",
     spend: "123.45",
     impressions: "1000",
-    reach: "800",
     clicks: "40",
     inline_link_clicks: "35",
     actions: [
@@ -37,13 +36,13 @@ async function main() {
       { action_type: "post_engagement", value: "90" },
     ],
   }, "act_1");
+  assert.equal("reach" in row, false, "reach no se pide ni se guarda: no se muestra en ningún lado y pesa en 22 000 filas");
   assert.deepEqual(row, {
     adId: "120247808685340416",
     accountId: "act_1",
     date: "2026-09-01",
     spend: 123.45,
     impressions: 1000,
-    reach: 800,
     clicks: 40,
     linkClicks: 35,
     leadsForm: 3,

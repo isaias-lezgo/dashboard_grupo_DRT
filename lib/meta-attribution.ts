@@ -216,12 +216,17 @@ function attrsOf(opp: Opportunity, contactById?: ReadonlyMap<string, Contact>): 
   return [...orderedAttrs(opp.attributions), ...orderedAttrs(contactById?.get(opp.contactId)?.attributions)];
 }
 
+// "-" (y variantes) es el placeholder de Make para "sin valor": 736 de los 830
+// "de pauta sin vincular" medidos 2026-09-29 lo traían en el campo Pauta, y
+// como "nombre" convertía oportunidades manuales en pauta sin vínculo.
+const PLACEHOLDER = /^[\s\-–—]*$/;
+
 function dedupe(values: (string | null | undefined)[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const v of values) {
     const s = String(v ?? "").trim();
-    if (!s || seen.has(s)) continue;
+    if (!s || PLACEHOLDER.test(s) || seen.has(s)) continue;
     seen.add(s);
     out.push(s);
   }

@@ -82,14 +82,14 @@ const meta: MetaAdsData = {
     { id: "401", name: "anuncio 1", adsetId: "s4" },
   ],
   daily: [
-    { adId: "101", accountId: "act_1", date: "2026-08-01", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
-    { adId: "101", accountId: "act_1", date: "2026-08-15", spend: 100, impressions: 1000, reach: 900, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
-    { adId: "201", accountId: "act_1", date: "2026-08-15", spend: 50, impressions: 500, reach: 400, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
-    { adId: "301", accountId: "act_2", date: "2026-08-20", spend: 30, impressions: 300, reach: 200, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
-    { adId: "101", accountId: "act_1", date: "2026-09-01", spend: 999, impressions: 1, reach: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
-    { adId: "401", accountId: "act_3", date: "2026-08-03", spend: 40, impressions: 400, reach: 300, clicks: 4, linkClicks: 4, leadsForm: 1, leadsMsg: 0 },
+    { adId: "101", accountId: "act_1", date: "2026-08-01", spend: 100, impressions: 1000, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
+    { adId: "101", accountId: "act_1", date: "2026-08-15", spend: 100, impressions: 1000, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 2 },
+    { adId: "201", accountId: "act_1", date: "2026-08-15", spend: 50, impressions: 500, clicks: 10, linkClicks: 8, leadsForm: 1, leadsMsg: 0 },
+    { adId: "301", accountId: "act_2", date: "2026-08-20", spend: 30, impressions: 300, clicks: 3, linkClicks: 3, leadsForm: 0, leadsMsg: 0 },
+    { adId: "101", accountId: "act_1", date: "2026-09-01", spend: 999, impressions: 1, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 },
+    { adId: "401", accountId: "act_3", date: "2026-08-03", spend: 40, impressions: 400, clicks: 4, linkClicks: 4, leadsForm: 1, leadsMsg: 0 },
     // Anuncio BORRADO: reporta gasto pero no está en `ads`.
-    { adId: "777", accountId: "act_1", date: "2026-08-04", spend: 70, impressions: 700, reach: 600, clicks: 7, linkClicks: 7, leadsForm: 0, leadsMsg: 1 },
+    { adId: "777", accountId: "act_1", date: "2026-08-04", spend: 70, impressions: 700, clicks: 7, linkClicks: 7, leadsForm: 0, leadsMsg: 1 },
   ],
   window: { since: "2026-08-01", until: "2026-09-13" },
   failedAccounts: [],
@@ -169,6 +169,13 @@ async function main() {
   assert.deepEqual(urlCandidates(opp({ id: "u1", customFieldsResolved: { "URL Pauta": "-" } })), []);
   assert.deepEqual(urlCandidates(opp({ id: "u2", customFieldsResolved: { "URL Pauta": "FORMS | ENERO | LA SIERRA - VIDEO 1" } })), []);
   assert.deepEqual(urlCandidates(opp({ id: "u3", attributionUrl: "fb.me/sinEsquema" })), []);
+  // "-" es el placeholder de Make para "sin valor" (736 de los 830 "sin vínculo"
+  // medidos 2026-09-29 lo traían en el campo Pauta): no es un nombre, y con él
+  // ~700 oportunidades manuales pasaban por "de pauta sin vincular".
+  assert.deepEqual(nameCandidates(opp({ id: "n1", customFieldsResolved: { Pauta: "-" } })), []);
+  assert.deepEqual(nameCandidates(opp({ id: "n2", customFieldsResolved: { Pauta: " - ", "Nombre Pauta": "--" } })), []);
+  assert.deepEqual(nameCandidates(opp({ id: "n3", attributions: [{ isFirst: true, utmCampaign: "-", adName: "Real" }] })), ["Real"]);
+  assert.deepEqual(classifyLead(opp({ id: "n4", source: "Prospección", customFieldsResolved: { Pauta: "-" } }), { index, pautaContacts: new Set(), pautaNamesByContact: new Map() }), { kind: "notPauta" }, "manual con Pauta '-' no es de pauta");
 
   // --- lo aprendido de los leads: URL → anuncio/campaña, y la campaña de un anuncio borrado
   const learned = buildLearnedIndex(
@@ -448,7 +455,7 @@ async function main() {
   assert.equal(invPal.kpi.cpl, null);
 
   // --- un anuncio borrado SIN campaña aprendida cae en "Sin campaña", al final y marcado
-  const orphanDaily = [...meta.daily, { adId: "888", accountId: "act_1", date: "2026-08-05", spend: 5, impressions: 50, reach: 50, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 }];
+  const orphanDaily = [...meta.daily, { adId: "888", accountId: "act_1", date: "2026-08-05", spend: 5, impressions: 50, clicks: 1, linkClicks: 1, leadsForm: 0, leadsMsg: 0 }];
   const invOrphan = buildPautaInvestment({ opportunities: [], daily: orphanDaily, range, ctx, contactsWithCita, accountIds: null });
   const last = invOrphan.campaigns[invOrphan.campaigns.length - 1];
   assert.equal(last.campaignId, "");

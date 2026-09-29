@@ -23,7 +23,6 @@ export interface RawInsightRow {
   date_start: string;
   spend?: string;
   impressions?: string;
-  reach?: string;
   clicks?: string;
   inline_link_clicks?: string;
   actions?: { action_type: string; value: string }[];
@@ -54,7 +53,6 @@ export function normalizeInsightRow(r: RawInsightRow, accountId: string): MetaDa
     date: r.date_start,
     spend: num(r.spend),
     impressions: num(r.impressions),
-    reach: num(r.reach),
     clicks: num(r.clicks),
     linkClicks: num(r.inline_link_clicks),
     leadsForm: action(r, LEAD_FORM_ACTION),
