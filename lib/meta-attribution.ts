@@ -36,6 +36,7 @@ import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type Pane
 import { hadCita, reachedStage, stageIndexOf } from "./desarrollo-funnel";
 import { buildPautaNamesByContact, isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
+import { igShortcode, isFbShortLink } from "./meta-normalize";
 
 /** Oportunidad de pauta sin ad id capturado: hueco de captura, en rojizo. */
 export const NO_AD_ID = "Sin ad id";
@@ -101,6 +102,10 @@ export interface MetaIndex {
   campaignsByName: Map<string, Set<string>>;
   /** Nombre plegado (de ad o de campaña) → campañas donde aparece. Lo conserva el filtro Campaña. */
   byName: Map<string, Set<string>>;
+  /** Post que promueve el creative ("ig:<código>" / "fb:<storyId>") → ids de anuncio. Varios anuncios pueden compartir post. */
+  adsByPost: Map<string, Set<string>>;
+  /** fb.me → storyId, resuelto en el sync (MetaAdsData.shortLinks). */
+  shortLinks: ReadonlyMap<string, string>;
 }
 
 function addTo(m: Map<string, Set<string>>, key: string, value: string) {
@@ -119,7 +124,15 @@ export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
   const adsByName = new Map<string, Set<string>>();
   const campaignsByName = new Map<string, Set<string>>();
   const byName = new Map<string, Set<string>>();
+  const adsByPost = new Map<string, Set<string>>();
+  const addPost = (key: string, adId: string) => {
+    const set = adsByPost.get(key) ?? new Set<string>();
+    set.add(adId);
+    adsByPost.set(key, set);
+  };
   for (const ad of meta.ads) {
+    if (ad.igCode) addPost(`ig:${ad.igCode}`, ad.id);
+    if (ad.storyId) addPost(`fb:${ad.storyId}`, ad.id);
     const adset = adsets.get(ad.adsetId);
     const campaign = adset ? campaignsById.get(adset.campaignId) : undefined;
     const account = campaign ? accountsById.get(campaign.accountId) : undefined;
@@ -137,7 +150,8 @@ export function buildMetaIndex(meta: MetaAdsData): MetaIndex {
     arr.push(d);
     dailyByAd.set(d.adId, arr);
   }
-  return { byAd, dailyByAd, campaignsById, accountsById, adsByName, campaignsByName, byName };
+  const shortLinks = new Map(Object.entries(meta.shortLinks ?? {}));
+  return { byAd, dailyByAd, campaignsById, accountsById, adsByName, campaignsByName, byName, adsByPost, shortLinks };
 }
 
 /**
@@ -284,6 +298,29 @@ export function nameCandidates(
   ]).filter((n) => n !== SIN_NOMBRE_CAMPAIGN);
 }
 
+/** La llave de post de una URL de entrada: "ig:<código>", "fb:<storyId>" (fb.me ya resuelto) o null. */
+export function postKeyOf(url: string, shortLinks: ReadonlyMap<string, string>): string | null {
+  const ig = igShortcode(url);
+  if (ig) return `ig:${ig}`;
+  const story = shortLinks.get(url);
+  return story ? `fb:${story}` : null;
+}
+
+/**
+ * Los fb.me que el sync tiene que resolver: los de oportunidades de pauta que
+ * no traen ningún ad id. Con ad id el nivel 1 ya decidió (o es un anuncio
+ * ajeno), así que resolver sus enlaces sería trabajo sin efecto: 1 378 fb.me
+ * distintos en total contra 81 de leads sin ad id (medido 2026-09-29).
+ */
+export function shortLinksToResolve(opportunities: Opportunity[], contactById?: ReadonlyMap<string, Contact>): string[] {
+  const out = new Set<string>();
+  for (const o of opportunities) {
+    if (isImported(o) || adIdCandidates(o, contactById).length > 0) continue;
+    for (const u of urlCandidates(o, contactById)) if (isFbShortLink(u)) out.add(u);
+  }
+  return [...out].sort();
+}
+
 // ── Lo que los leads enseñan sobre Meta ─────────────────────────────────────
 // Meta no expone la URL corta (fb.me/…) de un anuncio ni la campaña de un
 // anuncio ya borrado. Los leads que traen las dos cosas — URL y ad id resuelto,
@@ -354,7 +391,7 @@ export function buildLearnedIndex(
 // más; los dos son leads CRM de la campaña, solo el primero entra a la fila
 // del anuncio. `via` dice por qué nivel entró, para el pie y el drill.
 
-export type AttributionVia = "adId" | "campaignId" | "url" | "name";
+export type AttributionVia = "adId" | "campaignId" | "url" | "post" | "name";
 
 export type LeadAttribution =
   | { kind: "ad"; adId: string; campaignId: string | null; via: AttributionVia }
@@ -410,6 +447,24 @@ export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAtt
       }
       if (e.campaigns.size === 1) return { kind: "campaign", campaignId: [...e.campaigns][0], via: "url" };
     }
+  }
+
+  // 3b. el post al que apunta la URL, según el creative de los anuncios: Meta
+  // dice qué post promueve cada uno. Va después de la URL aprendida para no
+  // mover lo que ya resolvía. Un post que usan varios anuncios de una misma
+  // campaña resuelve a campaña; de varias campañas, a nada. Rescató 41 de los
+  // 77 leads de "Mensaje WhatsApp" sin ad id (medido 2026-09-29).
+  for (const u of urlCandidates(opp, ctx.contactById)) {
+    const key = postKeyOf(u, ctx.index.shortLinks);
+    const ads = key ? ctx.index.adsByPost.get(key) : undefined;
+    if (!ads) continue;
+    if (ads.size === 1) {
+      const adId = [...ads][0];
+      return { kind: "ad", adId, campaignId: campaignOfAd(ctx, adId), via: "post" };
+    }
+    const campaigns = new Set([...ads].map((id) => campaignOfAd(ctx, id)));
+    const only = [...campaigns][0];
+    if (campaigns.size === 1 && only) return { kind: "campaign", campaignId: only, via: "post" };
   }
 
   // 4. nombres: campaña si es el nombre de UNA campaña; anuncio si es el de UN anuncio.
@@ -778,7 +833,7 @@ export function buildPautaInvestment(p: PautaInvestmentInput): PautaInvestment {
   const currency = mixedCurrency ? "" : ([...currencies][0] ?? "");
 
   // Leads: la cohorte ya viene cortada; aquí solo se clasifica y se reparte.
-  const via: Record<AttributionVia, number> = { adId: 0, campaignId: 0, url: 0, name: 0 };
+  const via: Record<AttributionVia, number> = { adId: 0, campaignId: 0, url: 0, post: 0, name: 0 };
   const noAdId: PautaCell = { count: 0, oppIds: [] };
   const unknownAd: PautaCell = { count: 0, oppIds: [] };
   const otherAccount: PautaCell = { count: 0, oppIds: [] };

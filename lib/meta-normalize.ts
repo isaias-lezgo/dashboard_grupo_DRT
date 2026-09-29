@@ -35,6 +35,7 @@ export interface RawAd {
   created_time?: string;
   adset?: { id: string; name: string };
   campaign?: { id: string; name: string; objective?: string };
+  creative?: { effective_object_story_id?: string; instagram_permalink_url?: string };
 }
 
 function num(v: string | number | undefined): number {
@@ -71,6 +72,7 @@ export function normalizeAds(
   const adsets = new Map<string, MetaAdset>();
   const ads: MetaAd[] = [];
   for (const a of raw) {
+    const igCode = igShortcode(a.creative?.instagram_permalink_url);
     if (a.campaign && !campaigns.has(a.campaign.id)) {
       campaigns.set(a.campaign.id, {
         id: a.campaign.id,
@@ -88,9 +90,47 @@ export function normalizeAds(
       adsetId: a.adset?.id ?? "",
       status: a.effective_status,
       ...(a.created_time ? { createdTime: a.created_time } : {}),
+      ...(a.creative?.effective_object_story_id ? { storyId: a.creative.effective_object_story_id } : {}),
+      ...(igCode ? { igCode } : {}),
     });
   }
   return { campaigns: [...campaigns.values()], adsets: [...adsets.values()], ads };
+}
+
+// ── El post detrás de un anuncio ────────────────────────────────────────────
+// Un lead de WhatsApp que Make registró sin ad id suele traer en
+// attributions[].url el post desde el que escribió: instagram.com/p/<código>
+// o fb.me/<corto>. El creative del anuncio dice qué post promueve, así que el
+// post ata al lead con el anuncio (nivel "post" de classifyLead).
+
+/** Shortcode de un post o reel de Instagram, o null. */
+export function igShortcode(url: string | null | undefined): string | null {
+  const m = String(url ?? "").match(/instagram\.com\/(?:p|reels?|tv)\/([A-Za-z0-9_-]+)/i);
+  return m ? m[1] : null;
+}
+
+/** ¿Es un enlace corto de Facebook (fb.me/…)? Solo esos se resuelven en el sync. */
+export function isFbShortLink(url: string | null | undefined): boolean {
+  return /^https?:\/\/(www\.)?fb\.me\/[A-Za-z0-9_-]+$/i.test(String(url ?? "").trim());
+}
+
+/**
+ * Del `Location` al que redirige fb.me (`facebook.com/story.php?story_fbid=…&id=…`)
+ * al id que Graph acepta para pedir el post: `<id>_<story_fbid>`. El story_fbid
+ * suele venir ofuscado (`pfbid…`) y el id es el del perfil, no el de la página;
+ * Graph traduce ambos al `<página>_<post>` de effective_object_story_id.
+ */
+export function storyRefFromRedirect(location: string | null | undefined): string | null {
+  let u: URL;
+  try {
+    u = new URL(String(location ?? ""));
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)facebook\.com$/i.test(u.hostname)) return null;
+  const story = u.searchParams.get("story_fbid");
+  const id = u.searchParams.get("id");
+  return story && id && /^\d+$/.test(id) ? `${id}_${story}` : null;
 }
 
 /**

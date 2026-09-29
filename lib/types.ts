@@ -247,6 +247,10 @@ export interface MetaAd {
   status?: string
   /** ISO de Graph `created_time`; ausente en frames anteriores a 2026-09-28. */
   createdTime?: string
+  /** `effective_object_story_id` del creative: el post de Facebook que promueve ("<página>_<post>"). */
+  storyId?: string
+  /** Shortcode de `instagram_permalink_url` del creative: el post de Instagram que promueve. */
+  igCode?: string
 }
 
 /** Un ad, un día. Meta omite los días sin gasto, así que no hay filas en cero. */
@@ -276,6 +280,12 @@ export interface MetaAdsData {
   window: { since: string; until: string }
   /** Cuentas que fallaron en este sync. Vacío = todas bien. */
   failedAccounts: { id: string; reason: string }[]
+  /**
+   * `https://fb.me/…` con que entraron leads sin ad id → storyId del post al
+   * que redirige, resuelto en el sync (lib/sync.ts). Solo los que resolvieron;
+   * ausente en frames anteriores a 2026-09-29.
+   */
+  shortLinks?: Record<string, string>
 }
 
 /**

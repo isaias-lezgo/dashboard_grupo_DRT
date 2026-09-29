@@ -146,7 +146,7 @@ export function PautaInvestmentCard({
       .filter(Boolean)
       .join(", ")
 
-  const viaTotal = inv ? inv.via.adId + inv.via.campaignId + inv.via.url + inv.via.name : 0
+  const viaTotal = inv ? inv.via.adId + inv.via.campaignId + inv.via.url + inv.via.post + inv.via.name : 0
 
   return (
     <DashboardCard>
@@ -208,7 +208,8 @@ export function PautaInvestmentCard({
             <PautaInvestmentTable inv={inv} onDrill={drillMetrics} />
             <p className="border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
               {n(viaTotal)} {viaTotal === 1 ? "lead entró" : "leads entraron"} por ad id ({n(inv.via.adId)}), id de
-              campaña ({n(inv.via.campaignId)}), URL ({n(inv.via.url)}) o nombre ({n(inv.via.name)})
+              campaña ({n(inv.via.campaignId)}), URL ({n(inv.via.url)}), post del anuncio ({n(inv.via.post)}) o
+              nombre ({n(inv.via.name)})
               {inv.noAdId.count > 0 && (
                 <>
                   ;{" "}

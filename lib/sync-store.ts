@@ -40,13 +40,14 @@ export function isStale(syncedAt: string | Date, now: Date = new Date()): boolea
 /**
  * Qué caché de ese cliente. `dashboard` es el payload del sync principal;
  * `conversation-activity` es el mapa contacto → último saliente de la matriz
- * "Oportunidades sin atención". Ambos son desechables y comparten la tabla: un
+ * "Oportunidades sin atención"; `meta-shortlinks` es fb.me → post de Meta
+ * (lib/sync.ts). Todos son desechables y comparten la tabla: un
  * slot nuevo no pide migración, solo otra fila.
  *
  * La llave se DERIVA del ClientConfig aquí adentro y el slot es un tipo cerrado,
  * así que ningún llamador puede armar una llave que apunte a otro cliente.
  */
-export type SyncSlot = "dashboard" | "conversation-activity";
+export type SyncSlot = "dashboard" | "conversation-activity" | "meta-shortlinks";
 
 function rowKey(client: ClientConfig, slot: SyncSlot): string {
   // La fila del dashboard conserva la llave de siempre (el id pelón) para no

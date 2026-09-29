@@ -29,6 +29,8 @@ import {
   SIN_CAMPANA,
   ANUNCIO_ELIMINADO,
   buildMetaPanelContext,
+  postKeyOf,
+  shortLinksToResolve,
   type AttributionContext,
 } from "../lib/meta-attribution";
 import { buildPautaNamesByContact } from "../lib/pauta-performance";
@@ -400,7 +402,7 @@ async function main() {
   assert.equal(inv.unknownAd.count, 1); assert.deepEqual(inv.unknownAd.oppIds, ["9"]);
   assert.equal(inv.otherAccount.count, 0, "en GENERAL no hay 'otra cuenta'");
   assert.equal(inv.notPauta, 2);
-  assert.deepEqual(inv.via, { adId: 6, campaignId: 0, url: 1, name: 0 });
+  assert.deepEqual(inv.via, { adId: 6, campaignId: 0, url: 1, post: 0, name: 0 });
   assert.equal(inv.unlinkedSpend, 0, "el borrado 777 sí tiene campaña aprendida");
 
   // filas por gasto desc: c1 (270 = 200 + 70 del borrado), c2 (50), c4 (40), c3 (30)
@@ -468,6 +470,58 @@ async function main() {
   // --- sin rango = toda la ventana
   const invAll = buildPautaInvestment({ opportunities: cohort, daily: meta.daily, range: null, ctx, contactsWithCita, accountIds: null });
   assert.equal(invAll.kpi.spend, 390 + 999);
+
+  // --- nivel "post": la URL del post que promueve el creative (2026-09-29)
+  // Leads de "Mensaje WhatsApp" que Make registró sin ad id pero con la URL del
+  // post. El creative de cada anuncio dice qué post promueve.
+  const metaPost: MetaAdsData = {
+    ...meta,
+    ads: [
+      ...meta.ads.map((a) => (a.id === "101" ? { ...a, igCode: "DT_CGR" } : a.id === "201" ? { ...a, storyId: "900_1" } : a)),
+      { id: "103", name: "Otro", adsetId: "s1", storyId: "900_2" }, // post compartido por 103 y 104, misma campaña
+      { id: "104", name: "Otro", adsetId: "s1", storyId: "900_2" },
+      { id: "303", name: "X", adsetId: "s3", igCode: "MULTI" },   // post en dos campañas → no identifica nada
+      { id: "304", name: "X", adsetId: "s2", igCode: "MULTI" },
+    ],
+    shortLinks: { "https://fb.me/POST1": "900_1", "https://fb.me/POST2": "900_2", "https://fb.me/MULT": "900_9" },
+  };
+  const postCtx: AttributionContext = { ...ctx, index: buildMetaIndex(metaPost), learned: undefined };
+  assert.equal(postKeyOf("https://www.instagram.com/p/DT_CGR", postCtx.index.shortLinks), "ig:DT_CGR");
+  assert.equal(postKeyOf("https://fb.me/POST1", postCtx.index.shortLinks), "fb:900_1");
+  assert.equal(postKeyOf("https://fb.me/SINRESOLVER", postCtx.index.shortLinks), null);
+  assert.deepEqual(
+    classifyLead(opp({ id: "pi", source: "direct", contactId: "c-11", attributions: [{ isFirst: true, url: "https://www.instagram.com/p/DT_CGR/" }] }), postCtx),
+    { kind: "ad", adId: "101", campaignId: "c1", via: "post" }, "Instagram: shortcode del permalink del creative"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "pf", attributions: [{ isFirst: true, url: "https://fb.me/POST1" }] }), postCtx),
+    { kind: "ad", adId: "201", campaignId: "c2", via: "post" }, "fb.me resuelto al storyId del creative"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "pc", attributions: [{ isFirst: true, url: "https://fb.me/POST2" }] }), postCtx),
+    { kind: "campaign", campaignId: "c1", via: "post" }, "post de dos anuncios de una campaña → campaña"
+  );
+  assert.equal(
+    classifyLead(opp({ id: "pm", attributions: [{ isFirst: true, url: "https://www.instagram.com/p/MULTI/" }] }), postCtx).kind,
+    "noAdId", "post de dos campañas no identifica nada"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "pa", adId: "9999", attributions: [{ isFirst: true, url: "https://fb.me/POST1" }] }), postCtx),
+    { kind: "unknownAd", adId: "9999" }, "con un ad id ajeno el post ya no opina"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "pl", attributions: [{ isFirst: true, url: "https://fb.me/DOS" }] }), { ...postCtx, learned }),
+    { kind: "ad", adId: "201", campaignId: "c2", via: "url" }, "la URL aprendida sigue antes que el post"
+  );
+  assert.deepEqual(
+    shortLinksToResolve([
+      opp({ id: "s1", attributions: [{ isFirst: true, url: "https://fb.me/B" }, { isLast: true, url: "https://www.instagram.com/p/X/" }] }),
+      opp({ id: "s2", attributionUrl: "https://fb.me/A" }),
+      opp({ id: "s3", adId: "101", attributionUrl: "https://fb.me/CONID" }),
+      opp({ id: "s4", attributionMedium: "csv_import", attributionUrl: "https://fb.me/CSV" }),
+    ]),
+    ["https://fb.me/A", "https://fb.me/B"], "solo fb.me de leads sin ad id y no importados"
+  );
 
   // --- el contexto que page.tsx arma una vez y baja a las siete pestañas
   const panelCtx = buildMetaPanelContext({ meta, allOpportunities: opps, contacts: [], pautas, pipelines });

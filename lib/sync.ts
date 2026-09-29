@@ -28,7 +28,10 @@ import {
 import { withClient } from "@/lib/ghl-context";
 import { readMetaConnectionWithToken } from "@/lib/meta-connection-store";
 import { slimContact, slimOpportunity } from "@/lib/sync-slim";
-import { fetchMetaAds, MetaApiError } from "@/lib/meta-client";
+import { fetchMetaAds, MetaApiError, resolveShortLinks } from "@/lib/meta-client";
+import { shortLinksToResolve } from "@/lib/meta-attribution";
+import { isDbConfigured } from "@/lib/db";
+import { readSlot, writeSlot } from "@/lib/sync-store";
 import { historyWindow } from "@/lib/meta-normalize";
 import { deletedUserLabel } from "@/lib/panel-filters";
 import { PANEL_TIME_ZONE } from "@/lib/task-backlog";
@@ -266,6 +269,64 @@ interface DatasetOutcome<T> {
 
 // One GHL rate-limit window — the same pause fanOutPages uses between attempts.
 const DATASET_RETRY_PAUSE_MS = 10_000;
+
+// ── fb.me → post de Meta ────────────────────────────────────────────────────
+// Los leads de "Mensaje WhatsApp" que Make registra sin ad id traen el fb.me del
+// post desde el que escribieron; resolverlo al post permite atarlos al anuncio
+// que lo promueve (nivel "post" de classifyLead). La resolución es estable, así
+// que se guarda en su propio slot de Neon y solo se piden los enlaces nuevos;
+// cada semana se rehace completa por si un post que no resolvía ya resuelve.
+// Nada de esto puede tumbar el sync: sin base, sin red o sin Graph, se sigue
+// con lo que haya.
+
+interface ShortLinkCache {
+  checkedAt: string;
+  /** null = respuesta definitiva de que no es (o ya no es) un post. */
+  links: Record<string, string | null>;
+}
+
+const SHORT_LINK_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function resolveLeadShortLinks(
+  client: ClientConfig,
+  urls: string[],
+  resolve: (urls: string[]) => Promise<{ resolved: Record<string, string | null>; failed: string[] }>
+): Promise<Record<string, string>> {
+  if (urls.length === 0) return {};
+  let cached: ShortLinkCache | null = null;
+  if (isDbConfigured()) {
+    cached = await readSlot<ShortLinkCache>(client, "meta-shortlinks")
+      .then((r) => r?.payload ?? null)
+      .catch((err) => {
+        console.error("[meta] no se pudo leer el caché de fb.me:", err);
+        return null;
+      });
+  }
+  const fresh = !!cached && Date.now() - Date.parse(cached.checkedAt) < SHORT_LINK_RECHECK_MS;
+  const links: Record<string, string | null> = fresh ? { ...cached!.links } : {};
+  const missing = urls.filter((u) => !(u in links));
+  if (missing.length > 0) {
+    try {
+      const { resolved, failed } = await resolve(missing);
+      Object.assign(links, resolved);
+      if (failed.length) console.warn(`[meta] ${failed.length} fb.me sin resolver en este sync; se reintentan en el próximo`);
+    } catch (err) {
+      console.error("[meta] la resolución de fb.me falló:", err instanceof Error ? err.message : String(err));
+    }
+    if (isDbConfigured()) {
+      const now = new Date().toISOString();
+      await writeSlot(client, "meta-shortlinks", { checkedAt: fresh ? cached!.checkedAt : now, links }, now).catch((err) =>
+        console.error("[meta] no se pudo guardar el caché de fb.me:", err)
+      );
+    }
+  }
+  const out: Record<string, string> = {};
+  for (const u of urls) {
+    const story = links[u];
+    if (story) out[u] = story;
+  }
+  return out;
+}
 
 // Run one dataset of the sync, emitting its step frames and applying the
 // dataset-level safety net.
@@ -582,7 +643,12 @@ export async function syncProject(
     // Meta (medido en producción 2026-09-29); en paralelo manda el más lento.
     // Sin conexión no se emite el paso: eso no es un error, es que nadie ha
     // apretado "Conectar con Meta".
-    const metaPromise = (async (): Promise<{ metaAds: MetaAdsData | null; metaWarning: SyncWarning | null }> => {
+    const metaPromise = (async (): Promise<{
+      metaAds: MetaAdsData | null;
+      metaWarning: SyncWarning | null;
+      /** Resuelve fb.me con el token sin sacarlo de este bloque; null sin conexión. */
+      resolveLinks: ((urls: string[]) => ReturnType<typeof resolveShortLinks>) | null;
+    }> => {
       const metaStep = (status: "loading" | "done" | "partial" | "error", count?: number) =>
         send({ type: "step", key: "meta", status, ...(count !== undefined ? { count } : {}) });
 
@@ -643,7 +709,8 @@ export async function syncProject(
           };
         }
       }
-      return { metaAds, metaWarning };
+      const token = metaConn?.token ?? null;
+      return { metaAds, metaWarning, resolveLinks: metaAds && token ? (urls) => resolveShortLinks(token, urls) : null };
     })();
 
     // Contacts, opportunities, pautas, appointments and tasks are all
@@ -809,8 +876,11 @@ export async function syncProject(
     }
 
     // Meta corrió en paralelo con los datasets de GHL (arriba); aquí solo se recoge.
-    const { metaAds, metaWarning } = await metaPromise;
+    const { metaAds, metaWarning, resolveLinks } = await metaPromise;
     if (metaWarning) warnings.push(metaWarning);
+    if (metaAds && resolveLinks) {
+      metaAds.shortLinks = await resolveLeadShortLinks(client, shortLinksToResolve(opportunities, contactById), resolveLinks);
+    }
 
     // Conversations/messages are fetched separately by /api/dashboard-messages
     // (background load) so the expensive per-user message fan-out stays off

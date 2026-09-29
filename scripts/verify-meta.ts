@@ -9,6 +9,9 @@ import assert from "node:assert/strict";
 import {
   normalizeInsightRow,
   normalizeAds,
+  igShortcode,
+  isFbShortLink,
+  storyRefFromRedirect,
   monthChunks,
   historyWindow,
   mergeMetaAds,
@@ -76,6 +79,27 @@ async function main() {
     { id: "a3", name: "Ad 3", adsetId: "s2", status: undefined },
   ]);
   // --- un ad sin adset/campaign (borrados) se conserva con padres vacíos
+  // el post que promueve el creative
+  const withPost = normalizeAds("act_1", [
+    { id: "p1", name: "a", creative: { effective_object_story_id: "900_1", instagram_permalink_url: "https://www.instagram.com/p/DctvIqmgT34/" } },
+    { id: "p2", name: "b", creative: {} },
+  ]);
+  assert.equal(withPost.ads[0].storyId, "900_1");
+  assert.equal(withPost.ads[0].igCode, "DctvIqmgT34");
+  assert.equal("storyId" in withPost.ads[1] || "igCode" in withPost.ads[1], false, "sin creative no se inventa post");
+  assert.equal(igShortcode("https://www.instagram.com/reel/AbC_-9/?igsh=x"), "AbC_-9");
+  assert.equal(igShortcode("https://fb.me/abc"), null);
+  assert.equal(isFbShortLink("https://fb.me/6OtVLxEhM"), true);
+  assert.equal(isFbShortLink("https://fb.me/6OtVLxEhM/extra"), false);
+  assert.equal(isFbShortLink("https://www.facebook.com/x"), false);
+  assert.equal(
+    storyRefFromRedirect("https://www.facebook.com/story.php?story_fbid=pfbid082EM&id=100063709399083&post_id=x"),
+    "100063709399083_pfbid082EM"
+  );
+  assert.equal(storyRefFromRedirect("https://www.facebook.com/login"), null);
+  assert.equal(storyRefFromRedirect("https://evil.com/story.php?story_fbid=1&id=2"), null);
+  assert.equal(storyRefFromRedirect(null), null);
+
   const orphan = normalizeAds("act_1", [{ id: "a9", name: "Huérfano" }]);
   assert.deepEqual(orphan.ads, [{ id: "a9", name: "Huérfano", adsetId: "", status: undefined }]);
   assert.deepEqual(orphan.adsets, []);

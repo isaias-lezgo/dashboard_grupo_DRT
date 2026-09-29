@@ -15,6 +15,7 @@ import {
   splitRange,
   normalizeAds,
   normalizeInsightRow,
+  storyRefFromRedirect,
   type RawAd,
   type RawInsightRow,
 } from "./meta-normalize";
@@ -195,7 +196,14 @@ async function runPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
 async function listAds(token: string, accountId: string): Promise<RawAd[]> {
   return graphGetAll<RawAd>(
     `${accountId}/ads`,
-    { fields: "id,name,effective_status,created_time,adset{id,name},campaign{id,name,objective}", limit: "500" },
+    {
+      // creative: el post que promueve el anuncio, para atar leads que llegaron
+      // con la URL del post y sin ad id (nivel "post" de classifyLead).
+      fields:
+        "id,name,effective_status,created_time,adset{id,name},campaign{id,name,objective}," +
+        "creative{effective_object_story_id,instagram_permalink_url}",
+      limit: "500",
+    },
     token
   );
 }
@@ -265,6 +273,50 @@ async function fetchAccount(
     hierarchy: normalizeAds(account.id, kept),
     daily,
   };
+}
+
+// ── Enlaces cortos fb.me ────────────────────────────────────────────────────
+
+const SHORT_LINK_CONCURRENCY = 8;
+
+/**
+ * fb.me/… → storyId (`<página>_<post>`, el formato de effective_object_story_id).
+ * Dos pasos: el redirect de fb.me (sin seguirlo) da `story.php?story_fbid&id`, y
+ * Graph traduce `<id>_<story_fbid>` al id canónico del post. Devuelve null
+ * cuando la respuesta es definitiva (no redirige a un post, Graph no lo
+ * conoce) y LANZA en fallos de red o de throttling, para que el llamador no lo
+ * guarde como "no resuelve". Medido 2026-09-29: 81 enlaces distintos.
+ */
+async function resolveShortLink(token: string, url: string): Promise<string | null> {
+  const res = await fetch(url, { redirect: "manual", headers: { "user-agent": "Mozilla/5.0" } });
+  if (res.status >= 500 || res.status === 429) throw new Error(`fb.me ${res.status}`);
+  const ref = storyRefFromRedirect(res.headers.get("location"));
+  if (!ref) return null;
+  try {
+    const post = await graphGet<{ id?: string }>(ref, { fields: "id" }, token);
+    return post.id ?? null;
+  } catch (err) {
+    if (err instanceof MetaApiError && !err.isTokenInvalid && err.status < 500) return null;
+    throw err;
+  }
+}
+
+/** Resuelve varios fb.me en paralelo. `resolved`: url → storyId o null; `failed`: urls que conviene reintentar. */
+export async function resolveShortLinks(
+  token: string,
+  urls: string[]
+): Promise<{ resolved: Record<string, string | null>; failed: string[] }> {
+  const resolved: Record<string, string | null> = {};
+  const failed: string[] = [];
+  await runPool(urls, SHORT_LINK_CONCURRENCY, async (url) => {
+    try {
+      resolved[url] = await resolveShortLink(token, url);
+    } catch (err) {
+      if (err instanceof MetaApiError && err.isTokenInvalid) throw err;
+      failed.push(url);
+    }
+  });
+  return { resolved, failed };
 }
 
 /**

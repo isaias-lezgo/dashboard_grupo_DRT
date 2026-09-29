@@ -101,8 +101,8 @@ pnpm verify:activity-cache # lib/activity-cache.ts — completa vs. incremental,
 pnpm verify:sync-store   # lib/sync-store.ts — gzip roundtrip, aislamiento por cliente, el candado
 pnpm verify:meta-oauth   # lib/meta-oauth.ts — state firmado, cifrado del token, URL del diálogo
 pnpm verify:meta-connection-store # lib/meta-connection-store.ts — fila por (cliente, producto); usa la base si hay DATABASE_URL
-pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ventana desde la subcuenta, paging.next, filtro de anuncios
-pnpm verify:meta-attribution # lib/meta-attribution.ts — cadena de cuatro niveles, URL aprendida, cuenta = desarrollo, buildPautaInvestment
+pnpm verify:meta         # lib/meta-normalize.ts — post del creative, fb.me → story, actions, chunks por mes, ventana desde la subcuenta, paging.next, filtro de anuncios
+pnpm verify:meta-attribution # lib/meta-attribution.ts — cadena de cinco niveles, URL aprendida, post del creative, cuenta = desarrollo, buildPautaInvestment
 pnpm verify:leads-per-day # lib/leads-per-day.ts — frontera de día en CDMX, relleno de huecos, fila "Sin fecha"
 pnpm verify:pauta-performance # lib/pauta-performance.ts — join Pauta → contacto → oportunidad → cita, doble conteo vs. totales
 pnpm verify:slim         # lib/sync-slim.ts — qué campos NO viajan al navegador (crudos de GHL, duplicados)
@@ -575,20 +575,31 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   Make para "sin valor" y no cuenta como id, URL ni nombre**: 736 de los 830 leads "de
   pauta sin vincular" medidos 2026-09-29 lo traían en el campo `Pauta` y eran
   oportunidades manuales (`direct`, "Prueba Domus AI", "Pase PV"…), no pauta. Tras el
-  arreglo quedan 163 `noAdId`, de los que 79 tienen objeto Pauta sin nombre ni ad id (62
-  de La Sierra, "Mensaje WhatsApp": ese escenario de Make no escribe `nombre_de_la_pauta`).
-- **La cadena de vínculos tiene cuatro niveles, cada uno solo si el anterior no dio
-  nada, nunca sumados** (`classifyLead`, 2026-09-28): **1** ad id (`adIdCandidates`) →
+  arreglo quedaban 163 `noAdId`; el nivel **3b** (post, abajo) rescató 41 y quedan
+  **122**: 86 sin ninguna llave (source "Facebook"/"Pauta WhatsApp" escrito a mano, 78
+  de Cañadas mar-may 2026, con 5 ventas — se corrige en la captura, no en el panel) y
+  36 cuyo post no promueve ningún anuncio actual (borrado u orgánico).
+- **La cadena de vínculos tiene cinco niveles, cada uno solo si el anterior no dio
+  nada, nunca sumados** (`classifyLead`, 2026-09-28; el 3b desde 2026-09-29): **1** ad id (`adIdCandidates`) →
   **2** `utmCampaignId` de la attribution → **3** la URL de entrada (`URL Pauta`,
   `attributionUrl`, `attributions[].url`; solo `http(s)://` con ruta — Make escribe `-`
   y nombres de anuncio en ese campo) contra el mapa **URL → anuncio aprendido** de las
   oportunidades que traen URL y ad id (`buildLearnedIndex`, sobre el set sin filtrar;
   una URL vista con un ad id que Meta no conoce queda marcada `foreign` y no identifica
-  nada; una URL de varios anuncios de una misma campaña resuelve a campaña) → **4**
+  nada; una URL de varios anuncios de una misma campaña resuelve a campaña) → **3b** el
+  **post** de esa URL contra el creative de los anuncios (`via: "post"`):
+  `instagram.com/p/<código>` contra `instagram_permalink_url`, y `fb.me/…` contra
+  `effective_object_story_id` — `MetaAd.igCode` / `storyId`, pedidos en `/ads`. El
+  fb.me se resuelve **en el sync** (redirect sin seguir → `story.php?story_fbid=pfbid…&id=`
+  → Graph traduce `<id>_<pfbid>` al `<página>_<post>` canónico; `resolveShortLinks`),
+  solo para leads sin ad id (`shortLinksToResolve`: 81 de 1 378 fb.me), cacheado en el
+  slot `meta-shortlinks` de Neon y rehecho cada 7 días; viaja en `metaAds.shortLinks`.
+  Un post de varios anuncios de UNA campaña resuelve a campaña; de varias, a nada. Va
+  después del 3 para no mover lo que ya resolvía (medido: solo cambiaron los 41) → **4**
   nombres (`Nombre Pauta`, `Pauta`, `adName`, `utmCampaign`, objeto Pauta) contra el
   nombre de UNA campaña o de UN anuncio. Resuelve a `ad` o a `campaign` con `via`;
   centinelas `unknownAd` (ad id de cuenta no conectada — **y con un ad id propio
-  desconocido los niveles 3-4 no corren**: es un anuncio ajeno, no un hueco), `noAdId`
+  desconocido los niveles 3-4 (y 3b) no corren**: es un anuncio ajeno, no un hueco), `noAdId`
   (de pauta sin llave) y `notPauta` (orgánico, referido, `csv_import` — gana incluso con
   ad id). Medido 2026-09-28 con cinco cuentas: 70.9 % de las no importadas resuelven por
   ad id; 3 740 de 3 782 `utmCampaignId` coinciden con la campaña del anuncio. Sin el
@@ -784,7 +795,7 @@ bug class these modules were extracted to kill.
 | `lib/stale-opportunity-matrix.ts` | el universo del embudo vivo + las cubetas de abandono en los dos ejes (movimiento y mensajes) |
 | `lib/task-backlog.ts` | las cubetas de vencimiento de tareas, calculadas en `America/Mexico_City` |
 | `lib/meta-normalize.ts` | de la respuesta cruda de Graph a `MetaAdsData`; ventana de historia y chunks por mes |
-| `lib/meta-attribution.ts` | la cadena de cuatro niveles (`classifyLead`), lo aprendido de los leads (URL → anuncio, campaña de anuncios borrados), cuenta = desarrollo, `buildMetaPanelContext` y `buildPautaInvestment`, la única agregación de la tarjeta |
+| `lib/meta-attribution.ts` | la cadena de cinco niveles (`classifyLead`), lo aprendido de los leads (URL → anuncio, campaña de anuncios borrados), cuenta = desarrollo, `buildMetaPanelContext` y `buildPautaInvestment`, la única agregación de la tarjeta |
 
 - **"Origen de lead" y "Canal de contacto" viven en el CONTACTO, no en la oportunidad.**
   `categoryValuesOf()` busca primero en la oportunidad y **cae al contacto** a través de un
