@@ -31,6 +31,9 @@ import {
   buildMetaPanelContext,
   postKeyOf,
   shortLinksToResolve,
+  buildMetaAgenciaByOpp,
+  agenciaOfAd,
+  campaignNameOfAd,
   type AttributionContext,
 } from "../lib/meta-attribution";
 import { buildPautaNamesByContact } from "../lib/pauta-performance";
@@ -68,12 +71,16 @@ const meta: MetaAdsData = {
     { id: "c2", name: "IW - Atria - Agosto", accountId: "act_1" },
     { id: "c3", name: "Branding genérico", accountId: "act_2" },
     { id: "c4", name: "PALMYRA | MAYO | PERFILES", accountId: "act_3" },
+    { id: "c5", name: "SAG - GEN - WSP  - C1", accountId: "act_3" },              // nomenclatura V1 en la campaña
+    { id: "c6", name: "Formularios Zanda", accountId: "act_3" },                   // sin código; el adset lo trae
   ],
   adsets: [
     { id: "s1", name: "Set", campaignId: "c1" },
     { id: "s2", name: "Set", campaignId: "c2" },
     { id: "s3", name: "Set", campaignId: "c3" },
     { id: "s4", name: "Set", campaignId: "c4" },
+    { id: "s5", name: "SAG - GEN - WSP  - C1 - acotado", campaignId: "c5" },
+    { id: "s6", name: "ZAN - INH - FORM - C1", campaignId: "c6" },
   ],
   ads: [
     { id: "101", name: "Cañadas by El Mirador", adsetId: "s1" },
@@ -82,6 +89,8 @@ const meta: MetaAdsData = {
     { id: "301", name: "Terrenos desde $1.2 M", adsetId: "s3" },
     { id: "302", name: "Atria lofts", adsetId: "s3" },             // "Atria lofts" en DOS campañas → ambiguo
     { id: "401", name: "anuncio 1", adsetId: "s4" },
+    { id: "501", name: "SAG - GEN - WSP  - C1 - A6", adsetId: "s5" },
+    { id: "601", name: "A1", adsetId: "s6" },
   ],
   daily: [
     { adId: "101", accountId: "act_1", date: "2026-08-01", spend: 100, impressions: 1000, clicks: 50, linkClicks: 40, leadsForm: 0, leadsMsg: 4 },
@@ -522,6 +531,28 @@ async function main() {
     ]),
     ["https://fb.me/A", "https://fb.me/B"], "solo fb.me de leads sin ad id y no importados"
   );
+
+  // --- la agencia de un anuncio: nomenclatura V1 (CAN-DOM-WSP-C3-A7) en la campaña, luego el adset, luego el anuncio
+  assert.equal(agenciaOfAd(ctx, "501"), "Genicrea", "SAG - GEN - WSP - C1: el código va detrás del desarrollo");
+  assert.equal(agenciaOfAd(ctx, "601"), "Inhouse", "la campaña no dice agencia pero el adset sí");
+  assert.equal(agenciaOfAd(ctx, "101"), null, "\"IW - Cañadas - Agosto\" / \"Cañadas by El Mirador\": ninguna agencia");
+  assert.equal(agenciaOfAd(ctx, "777"), null, "borrado: su campaña aprendida (c1) tampoco dice agencia");
+  assert.equal(agenciaOfAd(ctx, "9999"), null);
+  assert.equal(campaignNameOfAd(ctx, "501"), "SAG - GEN - WSP  - C1");
+  assert.equal(campaignNameOfAd(ctx, "777"), "IW - Cañadas - Agosto", "borrado: por la campaña aprendida");
+  assert.equal(campaignNameOfAd(ctx, "9999"), null);
+  const agByOpp = buildMetaAgenciaByOpp(
+    [
+      opp({ id: "g1", adId: "501" }),
+      opp({ id: "g2", adId: "601" }),
+      opp({ id: "g3", adId: "101" }),
+      opp({ id: "g4", customFieldsResolved: { "Nombre Pauta": "SAG - GEN - WSP  - C1" } }),   // nivel nombre: campaña → su agencia
+      opp({ id: "g5", source: "Referido" }),
+      opp({ id: "g6", adId: "501", attributionMedium: "csv_import" }),
+    ],
+    ctx
+  );
+  assert.deepEqual([...agByOpp], [["g1", "Genicrea"], ["g2", "Inhouse"], ["g4", "Genicrea"]], "solo las que llegan a un anuncio o campaña de Meta con agencia");
 
   // --- el contexto que page.tsx arma una vez y baja a las siete pestañas
   const panelCtx = buildMetaPanelContext({ meta, allOpportunities: opps, contacts: [], pautas, pipelines });

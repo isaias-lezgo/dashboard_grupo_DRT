@@ -145,6 +145,8 @@ export interface CampanaContext {
    * que queda como respaldo por ad id.
    */
   metaCampaignByOpp?: ReadonlyMap<string, string> | null
+  /** oppId → agencia leída de Meta (`buildMetaAgenciaByOpp`); nivel 0 de resolveAgencias. */
+  metaAgenciaByOpp?: ReadonlyMap<string, string> | null
 }
 
 /**
@@ -294,7 +296,7 @@ export function applyPanelFilters(
     if (byCampana && !campanasOf(o, ctx).some((n) => campanas.has(n))) return false
     if (
       byAgencia &&
-      !resolveAgencias(o, ctx.pautaNamesByContact, contactById).names.some((n) => agencias.has(n))
+      !resolveAgencias(o, ctx.pautaNamesByContact, contactById, ctx.metaAgenciaByOpp).names.some((n) => agencias.has(n))
     )
       return false
     return true

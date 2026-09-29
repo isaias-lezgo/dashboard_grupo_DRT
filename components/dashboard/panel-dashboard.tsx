@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types"
 import type { ResolvedDateRange } from "@/lib/date-range"
 import type { MetaPanelContext } from "@/lib/meta-attribution"
+import type { PanelFilters } from "@/lib/panel-filters"
 import type {
   ActivityMeta,
   ActivityProgress,
@@ -105,6 +106,8 @@ export interface PanelDashboardProps {
   metaWarning?: SyncWarning | null
   /** ISO de creación de la subcuenta; ancla la ventana de gasto. */
   locationCreatedAt?: string
+  /** Los filtros de la barra: la tarjeta de pauta acota el GASTO por campaña y agencia con ellos. */
+  panelFilters?: PanelFilters
 }
 
 export function PanelDashboard({
@@ -133,6 +136,7 @@ export function PanelDashboard({
   metaPanel = null,
   metaWarning = null,
   locationCreatedAt,
+  panelFilters,
 }: PanelDashboardProps) {
   // Todo lo que los gráficos por-oportunidad necesitan es idéntico, así que se
   // arma una sola vez y se derrama. Mantén ese patrón en vez de volver a listar
@@ -194,6 +198,7 @@ export function PanelDashboard({
         metaPanel={metaPanel}
         metaWarning={metaWarning}
         locationCreatedAt={locationCreatedAt}
+        panelFilters={panelFilters}
       />
       {/* La vigilancia de asesoras va solo por desarrollo (pedido del cliente,
           2026-09-14): en GENERAL la vista es de embudo y negocio, no de

@@ -35,6 +35,7 @@ import type {
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
 import { hadCita, reachedStage, stageIndexOf } from "./desarrollo-funnel";
 import { buildPautaNamesByContact, isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
+import { detectAgencia } from "./agencia";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 import { igShortcode, isFbShortLink } from "./meta-normalize";
 
@@ -184,6 +185,52 @@ export function buildMetaCampaignByOpp(opps: Opportunity[], ctx: AttributionCont
     const cid = a.kind === "ad" ? a.campaignId : a.kind === "campaign" ? a.campaignId : null;
     const name = cid ? ctx.index.campaignsById.get(cid)?.name?.trim() : undefined;
     if (name) m.set(o.id, name);
+  }
+  return m;
+}
+
+// ── Campaña y agencia de un anuncio ─────────────────────────────────────────
+// La nomenclatura V1 de marketing (CAN-DOM-WSP-C3-A7: desarrollo · agencia ·
+// tipo · campaña · anuncio) vive en los NOMBRES de Meta, no en el CRM. La
+// agencia se busca en la campaña, luego el adset, luego el anuncio; un anuncio
+// borrado se resuelve por la campaña aprendida de sus leads.
+
+/** Nombre de la campaña de Meta de un anuncio (o de su campaña aprendida si está borrado). */
+export function campaignNameOfAd(ctx: AttributionContext, adId: string): string | null {
+  const entry = ctx.index.byAd.get(adId);
+  if (entry?.campaign) return entry.campaign.name;
+  const cid = ctx.learned?.campaignOfDeletedAd.get(adId);
+  return (cid && ctx.index.campaignsById.get(cid)?.name) || null;
+}
+
+/** La agencia (Domus / Genicrea / Inhouse) que nombran la campaña, el adset o el anuncio; null si ninguno. */
+export function agenciaOfAd(ctx: AttributionContext, adId: string): string | null {
+  const entry = ctx.index.byAd.get(adId);
+  const names = [campaignNameOfAd(ctx, adId), entry?.adset?.name, entry?.ad.name];
+  for (const n of names) {
+    const a = detectAgencia(n);
+    if (a) return a;
+  }
+  return null;
+}
+
+/**
+ * oppId → agencia leída de Meta por la cadena completa (classifyLead): la del
+ * anuncio atado, o la del nombre de la campaña cuando solo se llegó a campaña.
+ * Nivel 0 de resolveAgencias (lib/agencia). Se arma en app/page.tsx sobre el
+ * set sin filtrar, una vez por payload.
+ */
+export function buildMetaAgenciaByOpp(opps: Opportunity[], ctx: AttributionContext): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const o of opps) {
+    const a = classifyLead(o, ctx);
+    const agencia =
+      a.kind === "ad"
+        ? agenciaOfAd(ctx, a.adId)
+        : a.kind === "campaign"
+          ? detectAgencia(ctx.index.campaignsById.get(a.campaignId)?.name)
+          : null;
+    if (agencia) m.set(o.id, agencia);
   }
   return m;
 }

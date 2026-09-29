@@ -15,12 +15,16 @@ import type {
 } from "@/lib/types"
 import type { ResolvedDateRange } from "@/lib/date-range"
 import {
+  agenciaOfAd,
   buildPautaInvestment,
+  campaignNameOfAd,
   localDay,
   scopeMetaDaily,
   type MetaPanelContext,
   type PautaMetrics,
 } from "@/lib/meta-attribution"
+import { NO_AGENCIA } from "@/lib/agencia"
+import type { PanelFilters } from "@/lib/panel-filters"
 import { PANEL_SCOPES, resolvePipelineId, scopeOpportunities, type PanelId } from "@/lib/panel-scope"
 import { cn } from "@/lib/utils"
 import {
@@ -57,6 +61,12 @@ export interface PautaInvestmentCardProps {
   metaPanel?: MetaPanelContext | null
   metaWarning?: SyncWarning | null
   locationCreatedAt?: string
+  /**
+   * Los filtros de la barra. Campaña y Agencia acotan también el GASTO (por el
+   * nombre de la campaña de Meta y por la agencia de su nomenclatura); los
+   * demás filtran solo leads, porque el gasto no sabe de asesores ni de canal.
+   */
+  panelFilters?: PanelFilters
 }
 
 /**
@@ -83,6 +93,7 @@ export function PautaInvestmentCard({
   metaPanel = null,
   metaWarning = null,
   locationCreatedAt,
+  panelFilters,
 }: PautaInvestmentCardProps) {
   const [drill, setDrill] = useState<DrillState>(DRILL_CLOSED)
   const scope = PANEL_SCOPES[panel]
@@ -116,17 +127,41 @@ export function PautaInvestmentCard({
     [dateRange]
   )
 
+  // El gasto obedece a los filtros Campaña y Agencia: sin esto, filtrar por
+  // agencia dejaba los leads de una y el gasto de todas, y el CPL mentía. Un
+  // anuncio pasa si el nombre de su campaña de Meta está entre las campañas
+  // marcadas y si su agencia (nomenclatura V1 en campaña → adset → anuncio)
+  // está entre las marcadas; "Sin agencia" alcanza a los anuncios sin código.
+  const spendFilter = useMemo(() => {
+    const campanas = panelFilters?.campanas ?? []
+    const agencias = panelFilters?.agencias ?? []
+    if (!metaPanel || (campanas.length === 0 && agencias.length === 0)) return null
+    const campanaSet = new Set(campanas)
+    const agenciaSet = new Set(agencias)
+    const cache = new Map<string, boolean>()
+    return (adId: string) => {
+      const hit = cache.get(adId)
+      if (hit !== undefined) return hit
+      const ok =
+        (campanaSet.size === 0 || campanaSet.has(campaignNameOfAd(metaPanel.ctx, adId)?.trim() ?? "")) &&
+        (agenciaSet.size === 0 || agenciaSet.has(agenciaOfAd(metaPanel.ctx, adId) ?? NO_AGENCIA))
+      cache.set(adId, ok)
+      return ok
+    }
+  }, [metaPanel, panelFilters?.campanas, panelFilters?.agencias])
+
   const inv = useMemo(() => {
     if (!metaPanel) return null
+    const scopedDaily = scopeMetaDaily(metaPanel.meta, metaPanel.desarrolloByAd, panel, pipelines)
     return buildPautaInvestment({
       opportunities: scopeOpportunities(opportunities, panel, pipelines),
-      daily: scopeMetaDaily(metaPanel.meta, metaPanel.desarrolloByAd, panel, pipelines),
+      daily: spendFilter ? scopedDaily.filter((d) => spendFilter(d.adId)) : scopedDaily,
       range,
       ctx: metaPanel.ctx,
       contactsWithCita,
       accountIds,
     })
-  }, [metaPanel, opportunities, panel, pipelines, range, contactsWithCita, accountIds])
+  }, [metaPanel, opportunities, panel, pipelines, range, contactsWithCita, accountIds, spendFilter])
 
   const oppById = useMemo(() => new Map(allOpportunities.map((o) => [o.id, o])), [allOpportunities])
   const openIds = (ids: string[], title: string, subtitle: string) => {
@@ -172,8 +207,10 @@ export function PautaInvestmentCard({
                 oportunidad entra por un solo nivel. <strong>Citas</strong> es etapa 04 o posterior, ganada,
                 o una cita en el objeto Citas; <strong>Visitas</strong> es 05 o ganada;{" "}
                 <strong>Ventas</strong> es ganada. Los costos son gasto ÷ resultados de esta cohorte: con un
-                ciclo de meses, el costo por venta de un periodo reciente siempre sale alto. Asesor, origen,
-                canal, campaña y agencia acotan solo los leads; el gasto no sabe de asesores.
+                ciclo de meses, el costo por venta de un periodo reciente siempre sale alto. Los filtros{" "}
+                <strong>Campaña</strong> y <strong>Agencia</strong> acotan también el gasto (por el nombre de
+                la campaña de Meta y por la agencia de su nomenclatura); asesor, origen y canal acotan solo los
+                leads, porque el gasto no sabe de asesores.
               </>
             }
           />

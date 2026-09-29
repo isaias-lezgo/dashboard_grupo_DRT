@@ -321,8 +321,12 @@ reintroduce a `sucursalField`-style seam here.
   (`lib/meta-attribution.ts`); the component (`pauta-investment-card.tsx` +
   `-kpis.tsx` + `-table.tsx`) only scopes and draws. Leads are the creation cohort of
   the tab (already date-filtered upstream); spend is the same date range over the tab's
-  **ad accounts** (each account is a desarrollo, `accountToPipeline`). The other global
-  filters narrow leads only, never spend. Sentinels: "Sin campaña" (deleted ads whose
+  **ad accounts** (each account is a desarrollo, `accountToPipeline`). **The Campaña and
+  Agencia filters narrow the spend too** (since 2026-09-29: `panelFilters` reaches the card,
+  which keeps only the ads whose Meta campaign name / agency are selected —
+  `campaignNameOfAd` / `agenciaOfAd`); without that, filtering by agency left one agency's
+  leads against everyone's spend and the CPL lied. Asesor, origen and canal narrow leads
+  only, never spend. Sentinels: "Sin campaña" (deleted ads whose
   campaign nobody taught), "Anuncio eliminado" (spend for an ad no longer in `/ads`),
   both in `MISSING_TEXT`. Footnote: leads per attribution level, unlinkable pauta
   leads, ad ids from unconnected accounts, leads from another account's ads. The Meta
@@ -928,8 +932,19 @@ skill**.
     Pauta "CAÑADA | Domus | FORM…", **95 from source "Prueba Domus AI"** — manual May-June
     records, confirm with the client that they are Domus), Inhouse 192 (166 by source),
     Genicrea 0, only **1** opportunity in the new format. The three agencies are always
-    listed, even at zero. No Meta level: the convention names the Meta campaign, so when
-    campaigns get renamed, level 2 catches it on new leads.
+    listed, even at zero. **Since 2026-09-29 there is a level 0, Meta** (`metaAgenciaByOpp`
+    in `CampanaContext`, built by `buildMetaAgenciaByOpp` in `lib/meta-attribution.ts`):
+    the agency named by the Meta **campaign** (then adset, then ad) of the ad the chain
+    attached the opportunity to (`agenciaOfAd`). The V1 nomenclature lives in Meta's
+    names, and a WhatsApp lead carries an ad id but no name anywhere in the CRM — verified
+    with GHL + Graph on real records (e.g. an opp whose only clue is `ID Pauta`
+    120252780007100418, whose campaign is "SAG - GEN - WSP - C1"). Before/after over
+    14,969: Domus 745 → 3,156, Genicrea 0 → 255, Inhouse 219 → 859, Sin agencia 14,010 →
+    10,699. What stays "Sin agencia" is the 275 old-style campaigns ("FORM ATRIA
+    NOVIEMBRE 2025", "ZND-0726-ALTA INTENCIÓN"…) that name no agency: the instructivo says
+    to ask marketing, not to guess. Filtering by Genicrea equals filtering by campaign
+    "SAG - GEN - WSP - C1" (255 leads, $41,709), and that spend matches Graph's
+    campaign-level total to 0.01 %.
   - Sus opciones (origen, canal, campaña y agencia) se acotan al pipeline de la pestaña activa y al
     rango de fechas; las de desarrollo y asesor no. Divergencia conocida, documentada en el spec del filtro.
   - They filter **opportunities only** — contacts carry no desarrollo of their own.

@@ -433,6 +433,14 @@ function main() {
     assert.deepEqual(resolveAgencias(porSource, byContact), { names: ["Inhouse"], source: "source" });
     assert.deepEqual(resolveAgencias(pautaGana, byContact), { names: ["Genicrea"], source: "pauta" });
     assert.deepEqual(resolveAgencias(nada, byContact), { names: [NO_AGENCIA], source: "none" }, "una Pauta sin código no nombra agencia");
+    // Con Meta conectado, la agencia sale PRIMERO del nombre de la campaña de Meta del
+    // anuncio al que la cadena ató la oportunidad (buildMetaAgenciaByOpp): la
+    // nomenclatura V1 vive ahí, y un lead de WhatsApp trae ad id pero ningún nombre.
+    // Medido 2026-09-29: 2 410 Domus, 647 Inhouse y 254 Genicrea estaban en "Sin agencia".
+    const metaAg = new Map([[nada.id, "Genicrea"], [porSource.id, "Domus"]]);
+    assert.deepEqual(resolveAgencias(nada, byContact, undefined, metaAg), { names: ["Genicrea"], source: "meta" });
+    assert.deepEqual(resolveAgencias(porSource, byContact, undefined, metaAg), { names: ["Domus"], source: "meta" }, "Meta manda sobre el source");
+    assert.deepEqual(resolveAgencias(porPauta, byContact, undefined, metaAg), { names: ["Domus"], source: "pauta" }, "sin campaña de Meta, cae como antes");
 
     const opps = [porPauta, dosPautas, porAtribucion, porAdName, porSource, nada, pautaGana];
     const ctx = { pautaNamesByContact: byContact };
@@ -441,6 +449,13 @@ function main() {
       ids(applyPanelFilters(opps, filters({ agencias: ["Domus"] }), PIPELINES, undefined, ctx)),
       ids([porPauta, dosPautas, porAdName])
     );
+    assert.deepEqual(
+      ids(applyPanelFilters(opps, filters({ agencias: ["Genicrea"] }), PIPELINES, undefined, { ...ctx, metaAgenciaByOpp: metaAg })),
+      ids([nada, pautaGana]),
+      "el filtro usa el nivel Meta cuando el contexto lo trae"
+    );
+    const opts = buildAgenciaOptions(opps, byContact, undefined, metaAg);
+    assert.deepEqual(opts.map((o) => [o.value, o.count]), [["Domus", 4], ["Genicrea", 2], ["Inhouse", 2], [NO_AGENCIA, 0]], "las opciones cuentan con el nivel Meta; las tres agencias siempre listadas");
     assert.deepEqual(
       ids(applyPanelFilters(opps, filters({ agencias: [NO_AGENCIA] }), PIPELINES, undefined, ctx)),
       ids([nada]),

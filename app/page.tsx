@@ -40,7 +40,7 @@ import {
   type PanelFilters,
 } from "@/lib/panel-filters"
 import { buildPautaNamesByContact } from "@/lib/pauta-performance"
-import { buildMetaCampaignByAd, buildMetaCampaignByOpp, buildMetaPanelContext } from "@/lib/meta-attribution"
+import { buildMetaAgenciaByOpp, buildMetaCampaignByAd, buildMetaCampaignByOpp, buildMetaPanelContext } from "@/lib/meta-attribution"
 import { buildAgenciaOptions } from "@/lib/agencia"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -235,6 +235,7 @@ export default function DashboardPage() {
       pautaNamesByContact: buildPautaNamesByContact(data?.pautas ?? []),
       metaCampaignByAd: buildMetaCampaignByAd(data?.metaAds),
       metaCampaignByOpp: metaPanel ? buildMetaCampaignByOpp(data?.opportunities ?? [], metaPanel.ctx) : null,
+      metaAgenciaByOpp: metaPanel ? buildMetaAgenciaByOpp(data?.opportunities ?? [], metaPanel.ctx) : null,
     }),
     [data?.pautas, data?.metaAds, data?.opportunities, metaPanel]
   )
@@ -357,7 +358,7 @@ export default function DashboardPage() {
   // estén en cero — ver buildAgenciaOptions.
   const agenciaOptions = useMemo((): MultiSelectOption[] => {
     if (activeTab === "conversations") return []
-    return buildAgenciaOptions(categoryBase, campanaCtx.pautaNamesByContact, contactById).map(
+    return buildAgenciaOptions(categoryBase, campanaCtx.pautaNamesByContact, contactById, campanaCtx.metaAgenciaByOpp).map(
       (o) => ({ value: o.value, label: o.value, count: o.count, muted: o.muted })
     )
   }, [activeTab, categoryBase, campanaCtx, contactById])
@@ -742,6 +743,7 @@ export default function DashboardPage() {
             metaPanel={metaPanel}
             metaWarning={metaWarning}
             locationCreatedAt={data?.meta?.locationCreatedAt}
+            panelFilters={panelFilters}
           />
         )}
         {/* Kept permanently mounted (hidden when inactive) so the AI chat

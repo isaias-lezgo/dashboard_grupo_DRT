@@ -46,7 +46,7 @@ export function detectAgencia(text: string | null | undefined): Agencia | null {
 }
 
 /** De dónde salió la agencia — ver resolveAgencias. */
-export type AgenciaSource = "pauta" | "atribucion" | "source" | "none"
+export type AgenciaSource = "meta" | "pauta" | "atribucion" | "source" | "none"
 
 /**
  * La última atribución de la oportunidad (`isLast`, o la última del arreglo), o
@@ -79,8 +79,20 @@ function lastAttribution(
 export function resolveAgencias(
   opp: Opportunity,
   pautaNamesByContact: ReadonlyMap<string, string[]>,
-  contactById?: ReadonlyMap<string, Contact>
+  contactById?: ReadonlyMap<string, Contact>,
+  /**
+   * `buildMetaAgenciaByOpp` (lib/meta-attribution): la agencia del nombre de
+   * la campaña de Meta (luego adset, luego anuncio) del anuncio al que la
+   * cadena ató la oportunidad. Nivel 0: la nomenclatura V1 vive en Meta, y un
+   * lead de WhatsApp trae ad id pero ningún nombre en el CRM. Medido
+   * 2026-09-29: sin este nivel, 2 410 Domus, 647 Inhouse y 254 Genicrea caían
+   * en "Sin agencia".
+   */
+  metaAgenciaByOpp?: ReadonlyMap<string, string> | null
 ): { names: string[]; source: AgenciaSource } {
+  const fromMeta = metaAgenciaByOpp?.get(opp.id)
+  if (fromMeta) return { names: [fromMeta], source: "meta" }
+
   const fromPauta = new Set<string>()
   for (const name of pautaNamesByContact.get(opp.contactId) ?? []) {
     const a = detectAgencia(name)
@@ -117,11 +129,12 @@ export interface AgenciaOption {
 export function buildAgenciaOptions(
   opps: Opportunity[],
   pautaNamesByContact: ReadonlyMap<string, string[]>,
-  contactById?: ReadonlyMap<string, Contact>
+  contactById?: ReadonlyMap<string, Contact>,
+  metaAgenciaByOpp?: ReadonlyMap<string, string> | null
 ): AgenciaOption[] {
   const counts = new Map<string, number>()
   for (const o of opps) {
-    for (const name of resolveAgencias(o, pautaNamesByContact, contactById).names) {
+    for (const name of resolveAgencias(o, pautaNamesByContact, contactById, metaAgenciaByOpp).names) {
       counts.set(name, (counts.get(name) ?? 0) + 1)
     }
   }
