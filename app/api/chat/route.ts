@@ -127,7 +127,7 @@ export async function POST(req: Request) {
         },
         {
           type: "text",
-          text: `Fecha y hora actuales: ${today}, ${time} (zona horaria ${tz}). Usa esto para resolver referencias relativas como "hoy", "ayer", "esta semana", "esta mañana" o "ahora".`,
+          text: `Fecha y hora actuales: ${today}, ${time} (zona horaria ${tz}). Usa esto para resolver referencias relativas como "hoy", "ayer", "esta semana", "esta mañana" o "ahora". Un mes mencionado SIN año ("agosto", "en marzo") es el más reciente que ya ocurrió o está en curso respecto a esta fecha — nunca el del año anterior salvo que el usuario lo diga; si dudas entre dos años, usa el más reciente y dilo en una línea.`,
         },
       ],
       tools: TOOL_DEFINITIONS as unknown as Anthropic.Tool[],
