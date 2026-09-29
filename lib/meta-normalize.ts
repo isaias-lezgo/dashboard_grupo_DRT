@@ -33,6 +33,7 @@ export interface RawAd {
   id: string;
   name: string;
   effective_status?: string;
+  created_time?: string;
   adset?: { id: string; name: string };
   campaign?: { id: string; name: string; objective?: string };
 }
@@ -46,9 +47,10 @@ function action(r: RawInsightRow, type: string): number {
   return num(r.actions?.find((a) => a.action_type === type)?.value);
 }
 
-export function normalizeInsightRow(r: RawInsightRow): MetaDailyRow {
+export function normalizeInsightRow(r: RawInsightRow, accountId: string): MetaDailyRow {
   return {
     adId: String(r.ad_id),
+    accountId,
     date: r.date_start,
     spend: num(r.spend),
     impressions: num(r.impressions),
@@ -82,9 +84,41 @@ export function normalizeAds(
     if (a.adset && !adsets.has(a.adset.id)) {
       adsets.set(a.adset.id, { id: a.adset.id, name: a.adset.name, campaignId: a.campaign?.id ?? "" });
     }
-    ads.push({ id: String(a.id), name: a.name, adsetId: a.adset?.id ?? "", status: a.effective_status });
+    ads.push({
+      id: String(a.id),
+      name: a.name,
+      adsetId: a.adset?.id ?? "",
+      status: a.effective_status,
+      ...(a.created_time ? { createdTime: a.created_time } : {}),
+    });
   }
   return { campaigns: [...campaigns.values()], adsets: [...adsets.values()], ads };
+}
+
+/**
+ * Solo anuncios creados desde la subcuenta (`since` = YYYY-MM-DD del
+ * `dateAdded` de GHL). Pedido del cliente, 2026-09-28: Zanda arrastra campañas
+ * de 2020-2021 sin nada que cruzar. Se compara el día calendario de
+ * `created_time` tal como Graph lo escribe (con su offset); un anuncio del
+ * mismo día se conserva. Sin `created_time` no hay con qué juzgar: se conserva.
+ * `droppedIds` sirve para tirar también sus filas de insights.
+ */
+export function filterAdsCreatedSince(
+  raw: RawAd[],
+  since: string | null
+): { kept: RawAd[]; droppedIds: Set<string> } {
+  const droppedIds = new Set<string>();
+  if (!since) return { kept: raw, droppedIds };
+  const kept: RawAd[] = [];
+  for (const a of raw) {
+    const day = (a.created_time ?? "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < since) {
+      droppedIds.add(String(a.id));
+      continue;
+    }
+    kept.push(a);
+  }
+  return { kept, droppedIds };
 }
 
 /**

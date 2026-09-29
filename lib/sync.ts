@@ -774,6 +774,7 @@ export async function syncProject(
           token: metaToken,
           accounts: metaConn.availableAccounts.filter((a) => selected.has(a.id)),
           window: historyWindow(locationCreatedAt, today),
+          adsCreatedSince: locationCreatedAt ? locationCreatedAt.slice(0, 10) : null,
           onProgress: (n) => metaStep("loading", n),
         });
         if (metaAds.failedAccounts.length > 0) {

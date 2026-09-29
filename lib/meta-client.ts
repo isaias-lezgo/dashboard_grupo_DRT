@@ -8,6 +8,7 @@
 import { GRAPH_VERSION } from "./meta-oauth";
 import {
   monthChunks,
+  filterAdsCreatedSince,
   mergeMetaAds,
   nextPageRequest,
   normalizeAds,
@@ -27,7 +28,12 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 // inválido/revocado) NO está aquí a propósito: es terminal.
 const RETRYABLE_CODES = new Set([1, 2, 4, 17, 32, 613, 80004]);
 const MAX_ATTEMPTS = 3;
-const ACCOUNT_CONCURRENCY = 2;
+// Graph limita por AD ACCOUNT, no por token: todas las cuentas pueden ir a la
+// vez. Dentro de una cuenta, tres meses en paralelo. Medido 2026-09-28: en
+// serie (2 cuentas, meses uno por uno) el fetch de DRT tardaba 362 s, arriba
+// del techo de 300 s del refresco en segundo plano.
+const ACCOUNT_CONCURRENCY = 8;
+const MONTH_CONCURRENCY = 3;
 
 export class MetaApiError extends Error {
   code: number;
@@ -167,10 +173,23 @@ export async function listAdAccounts(token: string): Promise<MetaAccountInfo[]> 
 
 // ── Dataset ─────────────────────────────────────────────────────────────────
 
+// Corre `fn` sobre `items` con a lo más `limit` en vuelo, conservando el orden
+// de los resultados. Una excepción tumba el pool entero: para una cuenta, un
+// mes que falla invalida la cuenta (no se puede reportar medio gasto).
+async function runPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) results[i] = await fn(items[i]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 async function listAds(token: string, accountId: string): Promise<RawAd[]> {
   return graphGetAll<RawAd>(
     `${accountId}/ads`,
-    { fields: "id,name,effective_status,adset{id,name},campaign{id,name,objective}", limit: "500" },
+    { fields: "id,name,effective_status,created_time,adset{id,name},campaign{id,name,objective}", limit: "500" },
     token
   );
 }
@@ -192,7 +211,7 @@ async function adInsightsDaily(
     },
     token
   );
-  return rows.map(normalizeInsightRow);
+  return rows.map((r) => normalizeInsightRow(r, accountId));
 }
 
 // Una cuenta completa: jerarquía + gasto diario por mes. Las excepciones suben
@@ -201,17 +220,20 @@ async function fetchAccount(
   token: string,
   account: MetaAccountInfo,
   window: { since: string; until: string },
+  adsCreatedSince: string | null,
   onAds: (n: number) => void
 ) {
-  const ads = await listAds(token, account.id);
-  onAds(ads.length);
-  const daily: MetaDailyRow[] = [];
-  for (const chunk of monthChunks(window.since, window.until)) {
-    daily.push(...(await adInsightsDaily(token, account.id, chunk.since, chunk.until)));
-  }
+  const { kept, droppedIds } = filterAdsCreatedSince(await listAds(token, account.id), adsCreatedSince);
+  onAds(kept.length);
+  const months = await runPool(monthChunks(window.since, window.until), MONTH_CONCURRENCY, (chunk) =>
+    adInsightsDaily(token, account.id, chunk.since, chunk.until)
+  );
+  // Las filas de los anuncios descartados se van con ellos; las de un anuncio
+  // que Graph ya no lista en /ads (borrado) se quedan: su gasto fue real.
+  const daily = months.flat().filter((d) => !droppedIds.has(d.adId));
   return {
     account: { id: account.id, name: account.name, currency: account.currency, timezone: account.timezone },
-    hierarchy: normalizeAds(account.id, ads),
+    hierarchy: normalizeAds(account.id, kept),
     daily,
   };
 }
@@ -226,6 +248,8 @@ export async function fetchMetaAds(p: {
   token: string;
   accounts: MetaAccountInfo[];
   window: { since: string; until: string };
+  /** YYYY-MM-DD: anuncios creados antes se descartan. null = sin filtro. */
+  adsCreatedSince: string | null;
   onProgress?: (adsSoFar: number) => void;
 }): Promise<MetaAdsData> {
   const parts: Awaited<ReturnType<typeof fetchAccount>>[] = [];
@@ -237,7 +261,7 @@ export async function fetchMetaAds(p: {
     for (let acc = queue.shift(); acc; acc = queue.shift()) {
       try {
         parts.push(
-          await fetchAccount(p.token, acc, p.window, (n) => {
+          await fetchAccount(p.token, acc, p.window, p.adsCreatedSince, (n) => {
             adsSoFar += n;
             p.onProgress?.(adsSoFar);
           })

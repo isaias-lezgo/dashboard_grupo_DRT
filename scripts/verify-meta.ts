@@ -13,6 +13,7 @@ import {
   historyWindow,
   mergeMetaAds,
   nextPageRequest,
+  filterAdsCreatedSince,
   MAX_HISTORY_MONTHS,
 } from "../lib/meta-normalize";
 
@@ -32,9 +33,10 @@ async function main() {
       { action_type: "link_click", value: "35" },
       { action_type: "post_engagement", value: "90" },
     ],
-  });
+  }, "act_1");
   assert.deepEqual(row, {
     adId: "120247808685340416",
+    accountId: "act_1",
     date: "2026-09-01",
     spend: 123.45,
     impressions: 1000,
@@ -46,7 +48,7 @@ async function main() {
   });
 
   // --- campos ausentes → 0, nunca NaN
-  const bare = normalizeInsightRow({ ad_id: "1", date_start: "2026-09-02" });
+  const bare = normalizeInsightRow({ ad_id: "1", date_start: "2026-09-02" }, "act_1");
   assert.equal(bare.spend, 0);
   assert.equal(bare.leadsForm, 0);
   assert.equal(bare.leadsMsg, 0);
@@ -132,6 +134,24 @@ async function main() {
     "act_1/ads",
     "sin versión en el enlace"
   );
+
+  // --- anuncios creados antes de la subcuenta se descartan con su id; sin fecha se conservan
+  const rawAds = [
+    { id: "old", name: "Leads_Enero", created_time: "2021-01-05T10:00:00+0000" },
+    { id: "edge", name: "El mismo día", created_time: "2025-10-15T23:59:00-0600" },
+    { id: "new", name: "a1", created_time: "2026-02-01T10:00:00+0000" },
+    { id: "nodate", name: "sin created_time" },
+  ];
+  const f = filterAdsCreatedSince(rawAds, "2025-10-15");
+  assert.deepEqual(f.kept.map((a) => a.id), ["edge", "new", "nodate"]);
+  assert.deepEqual([...f.droppedIds], ["old"]);
+  const all = filterAdsCreatedSince(rawAds, null);
+  assert.equal(all.kept.length, 4, "sin fecha de subcuenta no se filtra nada");
+  assert.equal(all.droppedIds.size, 0);
+  // --- el created_time viaja al dataset; la fila diaria sabe de qué cuenta es
+  const hNew = normalizeAds("act_1", [{ id: "n", name: "a1", created_time: "2026-02-01T10:00:00+0000" }]);
+  assert.equal(hNew.ads[0].createdTime, "2026-02-01T10:00:00+0000");
+  assert.equal(normalizeInsightRow({ ad_id: "1", date_start: "2026-09-01" }, "act_9").accountId, "act_9");
 
   console.log("✅ verify:meta OK");
 }

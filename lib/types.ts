@@ -245,11 +245,15 @@ export interface MetaAd {
   name: string
   adsetId: string
   status?: string
+  /** ISO de Graph `created_time`; ausente en frames anteriores a 2026-09-28. */
+  createdTime?: string
 }
 
 /** Un ad, un día. Meta omite los días sin gasto, así que no hay filas en cero. */
 export interface MetaDailyRow {
   adId: string
+  /** "act_…" de la cuenta que reportó la fila; ausente en frames viejos. */
+  accountId?: string
   /** YYYY-MM-DD en la zona horaria de la cuenta. */
   date: string
   spend: number
