@@ -34,7 +34,7 @@ import type {
 } from "./types";
 import { desarrolloOf, NO_DESARROLLO, PANEL_SCOPES, resolvePipelineId, type PanelId } from "./panel-scope";
 import { reachedStage, stageIndexOf } from "./desarrollo-funnel";
-import { isDePauta, resolveCampaignName, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
+import { isDePauta, SIN_NOMBRE_CAMPAIGN, type HasKey } from "./pauta";
 import { PANEL_TIME_ZONE } from "./task-backlog";
 
 /** Oportunidad de pauta sin ad id capturado: hueco de captura, en rojizo. */
@@ -305,10 +305,17 @@ export function buildLearnedIndex(
 }
 
 // ── Clasificación de un lead ────────────────────────────────────────────────
+// Cuatro niveles, cada uno SOLO si el anterior no dio nada, y nunca sumados:
+// contar "tiene ad id Y URL" contaría dos veces. Un lead se ata a un ANUNCIO
+// cuando la llave lo identifica, o solo a una CAMPAÑA cuando la llave no baja
+// más; los dos son leads CRM de la campaña, solo el primero entra a la fila
+// del anuncio. `via` dice por qué nivel entró, para el pie y el drill.
+
+export type AttributionVia = "adId" | "campaignId" | "url" | "name";
 
 export type LeadAttribution =
-  | { kind: "exact"; adId: string; campaignId: string | null }
-  | { kind: "byName"; name: string; campaignId: string }
+  | { kind: "ad"; adId: string; campaignId: string | null; via: AttributionVia }
+  | { kind: "campaign"; campaignId: string; via: AttributionVia }
   | { kind: "unknownAd"; adId: string }
   | { kind: "noAdId" }
   | { kind: "notPauta" };
@@ -316,27 +323,61 @@ export type LeadAttribution =
 export interface AttributionContext {
   index: MetaIndex;
   pautaContacts: HasKey;
-  /** buildPautaNameByContact(allPautas), de lib/pauta.ts. */
-  pautaNameByContact: Map<string, string>;
+  /** buildPautaNamesByContact(allPautas) de lib/pauta.ts (re-exportada por pauta-performance): TODOS los nombres del contacto. */
+  pautaNamesByContact: ReadonlyMap<string, string[]>;
+  /** Para leer custom fields y attributions del contacto. Sin él, solo lo que la opp trae. */
+  contactById?: ReadonlyMap<string, Contact>;
+  /** buildLearnedIndex(allOpportunities, index, contactById). Sin él, el nivel 3 no existe. */
+  learned?: LearnedIndex;
+}
+
+function campaignOfAd(ctx: AttributionContext, adId: string): string | null {
+  return ctx.index.byAd.get(adId)?.campaign?.id ?? ctx.learned?.campaignOfDeletedAd.get(adId) ?? null;
 }
 
 export function classifyLead(opp: Opportunity, ctx: AttributionContext): LeadAttribution {
   if (isImported(opp)) return { kind: "notPauta" };
-  const adId = oppAdId(opp);
-  if (adId) {
-    const hit = ctx.index.byAd.get(adId);
-    return hit ? { kind: "exact", adId, campaignId: hit.campaign?.id ?? null } : { kind: "unknownAd", adId };
+
+  // 1. ad id, de cualquiera de sus fuentes; el primero que Meta reconozca.
+  const ids = adIdCandidates(opp, ctx.contactById);
+  for (const adId of ids) {
+    if (knownAd(ctx.index, adId)) return { kind: "ad", adId, campaignId: campaignOfAd(ctx, adId), via: "adId" };
   }
-  // Sin id: el nombre del ad, si es inequívoco. resolveCampaignName ya recorre
-  // utmCampaign → "Nombre Pauta" → utmContent → registro Pauta del contacto.
-  const name = resolveCampaignName(opp, ctx.pautaNameByContact);
-  if (name && name !== SIN_NOMBRE_CAMPAIGN) {
-    const campaigns = ctx.index.byName.get(fold(name));
-    if (campaigns && campaigns.size === 1) {
-      return { kind: "byName", name, campaignId: [...campaigns][0] };
+
+  // 2. la campaña que GHL guardó en la attribution.
+  for (const a of attrsOf(opp, ctx.contactById)) {
+    const cid = String(a.utmCampaignId ?? "").trim();
+    if (cid && ctx.index.campaignsById.has(cid)) return { kind: "campaign", campaignId: cid, via: "campaignId" };
+  }
+
+  // 3. la URL con la que entró, si otros leads enseñaron de qué anuncio es.
+  if (ctx.learned) {
+    for (const u of urlCandidates(opp, ctx.contactById)) {
+      const e = ctx.learned.byUrl.get(u);
+      if (!e) continue;
+      if (e.ads.size === 1) {
+        const adId = [...e.ads][0];
+        return { kind: "ad", adId, campaignId: campaignOfAd(ctx, adId), via: "url" };
+      }
+      if (e.campaigns.size === 1) return { kind: "campaign", campaignId: [...e.campaigns][0], via: "url" };
     }
   }
-  return isDePauta(opp, ctx.pautaContacts) || !!name ? { kind: "noAdId" } : { kind: "notPauta" };
+
+  // 4. nombres: campaña si es el nombre de UNA campaña; anuncio si es el de UN anuncio.
+  const names = nameCandidates(opp, ctx.contactById, ctx.pautaNamesByContact);
+  for (const name of names) {
+    const k = fold(name);
+    const campaigns = ctx.index.campaignsByName.get(k);
+    if (campaigns?.size === 1) return { kind: "campaign", campaignId: [...campaigns][0], via: "name" };
+    const ads = ctx.index.adsByName.get(k);
+    if (ads?.size === 1) {
+      const adId = [...ads][0];
+      return { kind: "ad", adId, campaignId: campaignOfAd(ctx, adId), via: "name" };
+    }
+  }
+
+  if (ids.length > 0) return { kind: "unknownAd", adId: ids[0] };
+  return isDePauta(opp, ctx.pautaContacts) || names.length > 0 ? { kind: "noAdId" } : { kind: "notPauta" };
 }
 
 // ── Desarrollo de cada ad ───────────────────────────────────────────────────
@@ -479,187 +520,3 @@ function ratio(num: number, den: number): number | null {
   return den > 0 ? num / den : null;
 }
 
-interface CostInput {
-  opportunities: Opportunity[];
-  daily: MetaDailyRow[];
-  ctx: AttributionContext;
-  accounts: MetaAccount[];
-  /** YYYY-MM-DD inclusivo, en la zona horaria del panel; null = toda la ventana. */
-  range: { start: string; end: string } | null;
-}
-
-export interface CostPerStage {
-  spendByCurrency: Record<string, number>;
-  mixedCurrency: boolean;
-  /** exact + byName: los que entran a la cohorte. */
-  leadsCrm: number;
-  leadsExact: number;
-  leadsByName: number;
-  leadsMeta: number;
-  /** De pauta, sin ad id ni nombre resoluble. */
-  noAdId: number;
-  /** Con ad id que no está en ninguna cuenta conectada. */
-  unknownAdLeads: number;
-  /** Orgánicos, referidos, importados: fuera del costo por definición. */
-  notPauta: number;
-  stages: { key: StageKey; label: string; reached: number; costPerResult: number | null; oppIds: string[] }[];
-}
-
-function currencyOfAd(index: MetaIndex, adId: string): string {
-  return index.byAd.get(adId)?.account?.currency || "";
-}
-
-export function buildCostPerStage(p: CostInput): CostPerStage {
-  const spendByCurrency: Record<string, number> = {};
-  let leadsMeta = 0;
-  for (const d of p.daily) {
-    if (!inRange(d.date, p.range)) continue;
-    const cur = currencyOfAd(p.ctx.index, d.adId);
-    spendByCurrency[cur] = (spendByCurrency[cur] ?? 0) + d.spend;
-    leadsMeta += d.leadsForm + d.leadsMsg;
-  }
-  const currencies = Object.keys(spendByCurrency);
-  const mixedCurrency = currencies.length > 1;
-  const totalSpend = mixedCurrency ? null : (spendByCurrency[currencies[0] ?? ""] ?? 0);
-
-  let leadsExact = 0;
-  let leadsByName = 0;
-  let noAdId = 0;
-  let unknownAdLeads = 0;
-  let notPauta = 0;
-  const cohort: Opportunity[] = [];
-  for (const o of p.opportunities) {
-    if (!inRange(localDay(o.createdAt), p.range)) continue;
-    const a = classifyLead(o, p.ctx);
-    switch (a.kind) {
-      case "exact":
-        leadsExact++;
-        cohort.push(o);
-        break;
-      case "byName":
-        leadsByName++;
-        cohort.push(o);
-        break;
-      case "unknownAd":
-        unknownAdLeads++;
-        break;
-      case "noAdId":
-        noAdId++;
-        break;
-      case "notPauta":
-        notPauta++;
-        break;
-    }
-  }
-
-  const stages = STAGE_TARGETS.map((t) => {
-    const hit = cohort.filter((o) => reachedStage(o, t));
-    return {
-      key: t.key,
-      label: t.label,
-      reached: hit.length,
-      costPerResult: totalSpend === null ? null : ratio(totalSpend, hit.length),
-      oppIds: hit.map((o) => o.id),
-    };
-  });
-
-  return {
-    spendByCurrency,
-    mixedCurrency,
-    leadsCrm: leadsExact + leadsByName,
-    leadsExact,
-    leadsByName,
-    leadsMeta,
-    noAdId,
-    unknownAdLeads,
-    notPauta,
-    stages,
-  };
-}
-
-// ── Por campaña ─────────────────────────────────────────────────────────────
-
-export interface CampaignPerformanceRow {
-  campaignId: string;
-  name: string;
-  accountId: string;
-  currency: string;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  cpm: number | null;
-  ctr: number | null;
-  leadsMeta: number;
-  /** exact + byName. */
-  leadsCrm: number;
-  leadsByName: number;
-  reached: Record<StageKey, number>;
-  cpl: number | null;
-  costPerApartado: number | null;
-  costPerVenta: number | null;
-  adIds: string[];
-}
-
-export function buildCampaignPerformance(p: CostInput): CampaignPerformanceRow[] {
-  const rows = new Map<string, CampaignPerformanceRow>();
-  const rowFor = (campaignId: string): CampaignPerformanceRow => {
-    let r = rows.get(campaignId);
-    if (!r) {
-      const c = [...p.ctx.index.byAd.values()].find((e) => e.campaign?.id === campaignId);
-      r = {
-        campaignId,
-        name: c?.campaign?.name ?? campaignId,
-        accountId: c?.campaign?.accountId ?? "",
-        currency: c?.account?.currency ?? "",
-        spend: 0,
-        impressions: 0,
-        clicks: 0,
-        cpm: null,
-        ctr: null,
-        leadsMeta: 0,
-        leadsCrm: 0,
-        leadsByName: 0,
-        reached: { contactado: 0, cita: 0, visita: 0, apartado: 0, venta: 0 },
-        cpl: null,
-        costPerApartado: null,
-        costPerVenta: null,
-        adIds: [],
-      };
-      rows.set(campaignId, r);
-    }
-    return r;
-  };
-
-  for (const d of p.daily) {
-    if (!inRange(d.date, p.range)) continue;
-    const cid = p.ctx.index.byAd.get(d.adId)?.campaign?.id;
-    if (!cid) continue;
-    const r = rowFor(cid);
-    r.spend += d.spend;
-    r.impressions += d.impressions;
-    r.clicks += d.clicks;
-    r.leadsMeta += d.leadsForm + d.leadsMsg;
-    if (!r.adIds.includes(d.adId)) r.adIds.push(d.adId);
-  }
-
-  for (const o of p.opportunities) {
-    if (!inRange(localDay(o.createdAt), p.range)) continue;
-    const a = classifyLead(o, p.ctx);
-    if (a.kind !== "exact" && a.kind !== "byName") continue;
-    if (!a.campaignId || !rows.has(a.campaignId)) continue;
-    const r = rows.get(a.campaignId)!;
-    r.leadsCrm++;
-    if (a.kind === "byName") r.leadsByName++;
-    for (const t of STAGE_TARGETS) if (reachedStage(o, t)) r.reached[t.key]++;
-  }
-
-  for (const r of rows.values()) {
-    r.cpm = r.impressions > 0 ? (r.spend / r.impressions) * 1000 : null;
-    r.ctr = ratio(r.clicks, r.impressions);
-    r.cpl = ratio(r.spend, r.leadsCrm);
-    r.costPerApartado = ratio(r.spend, r.reached.apartado);
-    r.costPerVenta = ratio(r.spend, r.reached.venta);
-  }
-
-  return [...rows.values()].sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name, "es"));
-}

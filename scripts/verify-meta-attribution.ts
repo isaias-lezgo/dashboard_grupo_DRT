@@ -27,7 +27,7 @@ import {
   STAGE_TARGETS,
   type AttributionContext,
 } from "../lib/meta-attribution";
-import { buildPautaNameByContact } from "../lib/pauta";
+import { buildPautaNamesByContact } from "../lib/pauta-performance";
 import { NO_DESARROLLO } from "../lib/panel-scope";
 import type { Contact, MetaAdsData, Opportunity, Pauta, Pipeline } from "../lib/types";
 
@@ -180,34 +180,87 @@ async function main() {
   assert.deepEqual([...learned.byUrl.get("https://fb.me/DEL")!.ads], ["777"], "el anuncio borrado tiene gasto: sí es nuestro");
   assert.equal(learned.campaignOfDeletedAd.get("777"), "c1", "la campaña del borrado sale del utmCampaignId de su lead");
 
-  // --- clasificación de un lead
+  // --- clasificación: cuatro niveles, cada uno solo si el anterior no dio nada
+  const ctxContacts = new Map<string, Contact>([
+    ["c-U", { id: "c-U", name: "U", email: "", phone: "", tags: [], dateAdded: "2026-08-01T00:00:00.000Z", createdAt: "2026-08-01T00:00:00.000Z",
+      customFieldsResolved: { "URL Pauta": "https://fb.me/DOS" } }],
+  ]);
   const ctx: AttributionContext = {
     index,
     pautaContacts: buildPautaContacts(pautas),
-    pautaNameByContact: buildPautaNameByContact(pautas),
+    pautaNamesByContact: buildPautaNamesByContact(pautas),
+    contactById: ctxContacts,
+    learned,
   };
-  assert.deepEqual(classifyLead(opp({ id: "1", adId: "101" }), ctx), { kind: "exact", adId: "101", campaignId: "c1" });
-  assert.deepEqual(classifyLead(opp({ id: "9", adId: "9999" }), ctx), { kind: "unknownAd", adId: "9999" });
-  // sin id, con nombre en el custom field de la oportunidad → campaña única
+  // nivel 1: ad id
+  assert.deepEqual(classifyLead(opp({ id: "1", adId: "101" }), ctx), { kind: "ad", adId: "101", campaignId: "c1", via: "adId" });
   assert.deepEqual(
-    classifyLead(opp({ id: "11", customFieldsResolved: { "Nombre Pauta": "Cañadas by El Mirador" } }), ctx),
-    { kind: "byName", name: "Cañadas by El Mirador", campaignId: "c1" }
+    classifyLead(opp({ id: "1b", customFieldsResolved: { "ID Pauta": "102" } }), ctx),
+    { kind: "ad", adId: "102", campaignId: "c1", via: "adId" }, "custom field de la opp"
   );
-  // sin id ni custom field, pero el contacto tiene registro Pauta con nombre → campaña única
-  assert.deepEqual(classifyLead(opp({ id: "11", contactId: "c-11", source: undefined }), ctx), {
-    kind: "byName", name: "Cañadas by El Mirador", campaignId: "c1",
-  });
-  // nombre ambiguo (dos campañas) → NO se atribuye; queda como pauta sin id
-  assert.deepEqual(classifyLead(opp({ id: "12", contactId: "c-12" }), ctx), { kind: "noAdId" });
-  // nombre "Sin nombre" del Make → no cuenta como nombre
-  assert.deepEqual(classifyLead(opp({ id: "13", contactId: "c-13" }), ctx), { kind: "noAdId" });
-  // de pauta por source, sin id ni nombre
+  assert.deepEqual(
+    classifyLead(opp({ id: "1c", attributions: [{ isLast: true, utmAdId: "201" }] }), ctx),
+    { kind: "ad", adId: "201", campaignId: "c2", via: "adId" }, "la última attribution también cuenta"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "1d", adId: "777" }), ctx),
+    { kind: "ad", adId: "777", campaignId: "c1", via: "adId" }, "anuncio borrado con gasto: es nuestro; su campaña se aprendió"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "1e", adId: "9999", customFieldsResolved: { "ID Pauta": "101" } }), ctx),
+    { kind: "ad", adId: "101", campaignId: "c1", via: "adId" }, "el primer id que pega manda, aunque no sea el primero de la lista"
+  );
+  // nivel 2: utmCampaignId
+  assert.deepEqual(
+    classifyLead(opp({ id: "2", adId: "9999", attributions: [{ isFirst: true, utmAdId: "9999", utmCampaignId: "c2" }] }), ctx),
+    { kind: "campaign", campaignId: "c2", via: "campaignId" }, "ad id de otra cuenta pero campaña conocida → campaña, no unknownAd"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "2b", attributions: [{ isFirst: true, utmCampaignId: "c-nadie" }], source: "Pauta Formulario" }), ctx),
+    { kind: "noAdId" }, "campaña desconocida no resuelve"
+  );
+  // nivel 3: URL aprendida
+  assert.deepEqual(
+    classifyLead(opp({ id: "3", customFieldsResolved: { "URL Pauta": "https://fb.me/DOS/" } }), ctx),
+    { kind: "ad", adId: "201", campaignId: "c2", via: "url" }, "URL de un solo anuncio → anuncio"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "3b", attributionUrl: "https://fb.me/UNO?fbclid=x" }), ctx),
+    { kind: "campaign", campaignId: "c1", via: "url" }, "URL de dos anuncios de la misma campaña → campaña"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "3c", contactId: "c-U", source: undefined }), ctx),
+    { kind: "ad", adId: "201", campaignId: "c2", via: "url" }, "la URL puede venir del contacto"
+  );
+  // nivel 4: nombres
+  assert.deepEqual(
+    classifyLead(opp({ id: "4", customFieldsResolved: { "Nombre Pauta": "PALMYRA | MAYO | PERFILES" } }), ctx),
+    { kind: "campaign", campaignId: "c4", via: "name" }, "nombre de UNA campaña de Meta → campaña"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "4b", attributions: [{ isFirst: true, utmCampaign: "IW - Atria - Agosto" }] }), ctx),
+    { kind: "campaign", campaignId: "c2", via: "name" }, "utmCampaign de la attribution"
+  );
+  assert.deepEqual(
+    classifyLead(opp({ id: "4c", customFieldsResolved: { Pauta: "Terrenos desde $1.2 M" } }), ctx),
+    { kind: "ad", adId: "301", campaignId: "c3", via: "name" }, "nombre de UN anuncio → anuncio"
+  );
+  assert.deepEqual(classifyLead(opp({ id: "4d", contactId: "c-11", source: undefined }), ctx), { kind: "noAdId" },
+    "\"Cañadas by El Mirador\" es el nombre de DOS anuncios (101, 102): ambiguo, no se atribuye");
+  assert.deepEqual(classifyLead(opp({ id: "4e", contactId: "c-12" }), ctx), { kind: "noAdId" },
+    "\"Atria lofts\" vive en dos campañas: ambiguo");
+  assert.deepEqual(classifyLead(opp({ id: "4f", contactId: "c-13" }), ctx), { kind: "noAdId" }, "\"Sin nombre\" no es un nombre");
+  // centinelas
+  assert.deepEqual(classifyLead(opp({ id: "9", adId: "9999" }), ctx), { kind: "unknownAd", adId: "9999" });
   assert.deepEqual(classifyLead(opp({ id: "8", source: "Pauta Formulario" }), ctx), { kind: "noAdId" });
-  // orgánico: sin señal de pauta
   assert.deepEqual(classifyLead(opp({ id: "r", source: "Referido" }), ctx), { kind: "notPauta" });
-  // importado por CSV: nunca es de pauta, aunque el pipeline sea de un desarrollo
   assert.deepEqual(classifyLead(opp({ id: "csv", source: undefined, attributionMedium: "csv_import", pipelineId: "p-pal" }), ctx), { kind: "notPauta" });
   assert.deepEqual(classifyLead(opp({ id: "csv2", adId: "101", attributionMedium: "csv_import" }), ctx), { kind: "notPauta" }, "csv_import gana incluso con ad id");
+  // sin `learned` ni `contactById` la cadena sigue funcionando con lo que la opp trae
+  assert.deepEqual(
+    classifyLead(opp({ id: "min", adId: "101" }), { index, pautaContacts: ctx.pautaContacts, pautaNamesByContact: ctx.pautaNamesByContact }),
+    { kind: "ad", adId: "101", campaignId: "c1", via: "adId" }
+  );
 
   // --- desarrollo por moda de leads, por nombre, sin desarrollo, y mixtos
   const opps = [
