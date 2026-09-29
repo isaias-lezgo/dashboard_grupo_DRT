@@ -105,6 +105,7 @@ pnpm verify:meta         # lib/meta-normalize.ts — actions, chunks por mes, ve
 pnpm verify:meta-attribution # lib/meta-attribution.ts — cadena de cuatro niveles, URL aprendida, cuenta = desarrollo, buildPautaInvestment
 pnpm verify:leads-per-day # lib/leads-per-day.ts — frontera de día en CDMX, relleno de huecos, fila "Sin fecha"
 pnpm verify:pauta-performance # lib/pauta-performance.ts — join Pauta → contacto → oportunidad → cita, doble conteo vs. totales
+pnpm verify:slim         # lib/sync-slim.ts — qué campos NO viajan al navegador (crudos de GHL, duplicados)
 npx tsc --noEmit         # REQUIRED: next build ignores TS errors, so a green build proves nothing
 
 # Caché de sincronización (Neon)
@@ -267,8 +268,10 @@ reintroduce a `sucursalField`-style seam here.
   re-listing props per chart. The chart set is the same for the six desarrollo tabs;
   **GENERAL differs in both directions** (gated on `panel === "general"` inside the same
   file, never a second component):
-  - **Only in GENERAL**: the header (three `desarrollo-counts-chart.tsx` mounts +
-    `stage-funnel-chart.tsx`, see next bullet) and `lost-cross-matrix.tsx`.
+  - **Only in GENERAL**: the header (three `desarrollo-counts-chart.tsx` mounts, see
+    next bullet) and `lost-cross-matrix.tsx`. `stage-funnel-chart.tsx` sat in that header
+    until 2026-09-29; it now renders in **every** tab (client's request), right below the
+    header, scoped to the tab's pipeline.
   - **Only in the desarrollo tabs**: `leads-per-day-chart.tsx` (mounted 2026-09-17 in a
     two-column grid next to `assignment-funnel-chart.tsx`; in GENERAL the monthly chart
     stays alone at full width) and `stale-opportunity-matrix.tsx` (removed from GENERAL
@@ -284,7 +287,7 @@ reintroduce a `sucursalField`-style seam here.
     `lib/opportunity-breakdown.ts` is still used by the assignment funnel). Both at the
     client's request; see "Charts deliberately absent".
 
-  The order, top to bottom: [GENERAL header] → `advisor-stage-table.tsx` →
+  The order, top to bottom: [GENERAL header] → `stage-funnel-chart.tsx` → `advisor-stage-table.tsx` →
   `assignment-funnel-chart.tsx` [+ `leads-per-day-chart.tsx` beside it, desarrollo tabs
   only] → `pauta-investment-card.tsx` → [stale matrix] → Origen / Canal pair →
   `lost-reason-matrix.tsx` → [`lost-cross-matrix.tsx`]. The charts:
@@ -345,8 +348,9 @@ reintroduce a `sucursalField`-style seam here.
   de `desarrollo-counts-chart.tsx` (Registros / Visitas / Ventas por desarrollo, una sola
   agregación `buildDesarrolloCounts` para que las tres tarjetas ordenen igual) y
   `stage-funnel-chart.tsx` (el embudo de seis pasos de la estrategia: leads → precalificados
-  `≥02` → citas `≥04` → visitas `≥05` → apartados `≥07` → ventas `isWonOpp`). Solo en GENERAL,
-  como el cruce de perdidas. Reglas que no hay que "arreglar":
+  `≥02` → citas `≥04` → visitas `≥05` → apartados `≥07` → ventas `isWonOpp`). Los recuentos
+  solo en GENERAL; el embudo **en las siete pestañas desde 2026-09-29** (pedido del cliente),
+  acotado al pipeline de cada una. Reglas que no hay que "arreglar":
   - **"Alcanzó la etapa" se lee de la PALABRA de la etapa ACTUAL, no de su número**
     (`stageRungOf` / `reachedStage` en `lib/desarrollo-funnel.ts`; `meta-attribution.ts` las
     importa de ahí). Una perdida en `Visita` sí visitó; una en la etapa `Perdido` no alcanzó
@@ -567,7 +571,12 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   que es el id del anuncio en la Marketing API tal cual. `oppAdId()` es la lectura corta
   (attribution nativa, luego el custom field); `adIdCandidates()` es la completa (opp →
   custom fields de la opp → del contacto → cualquier `attributions[].utmAdId`, first
-  antes que last), y es la que usa la cadena.
+  antes que last), y es la que usa la cadena. **`-` (y variantes) es el placeholder de
+  Make para "sin valor" y no cuenta como id, URL ni nombre**: 736 de los 830 leads "de
+  pauta sin vincular" medidos 2026-09-29 lo traían en el campo `Pauta` y eran
+  oportunidades manuales (`direct`, "Prueba Domus AI", "Pase PV"…), no pauta. Tras el
+  arreglo quedan 163 `noAdId`, de los que 79 tienen objeto Pauta sin nombre ni ad id (62
+  de La Sierra, "Mensaje WhatsApp": ese escenario de Make no escribe `nombre_de_la_pauta`).
 - **La cadena de vínculos tiene cuatro niveles, cada uno solo si el anterior no dio
   nada, nunca sumados** (`classifyLead`, 2026-09-28): **1** ad id (`adIdCandidates`) →
   **2** `utmCampaignId` de la attribution → **3** la URL de entrada (`URL Pauta`,
@@ -631,7 +640,17 @@ Spec: `docs/superpowers/specs/2026-09-13-meta-ads-conexion-y-sync-design.md`. En
   2 son transitorios y se reintentan; 190 sigue siendo terminal.
 - **De `actions` solo salen dos contadores**: `lead` (formularios) y
   `onsite_conversion.messaging_conversation_started_7d` (WhatsApp) — los dos `source` de
-  DRT. `leadsMeta` vs `leadsCrm` es una reconciliación, no un duplicado.
+  DRT. `leadsMeta` vs `leadsCrm` es una reconciliación, no un duplicado. **`reach` no se
+  pide** (2026-09-29): no se muestra y es una métrica de únicos que pesa en ~22 000 filas.
+  Medido por cuenta y mes, el hueco Meta → CRM tiene tres causas distintas: meses
+  anteriores al CRM (antes de 2025-12), Palmyra y Zanda de feb-ago 2026 (esos leads
+  entraron por CSV a fin de agosto y son `notPauta`), y un ~30 % constante en Cañadas
+  (probablemente conversaciones de WhatsApp iniciadas que nunca crean contacto).
+- **El asistente ve el gasto** por la herramienta `resumen_pauta` (`lib/ai-tools.ts`):
+  la MISMA `buildPautaInvestment` de la tarjeta, por desarrollo y rango, con el contexto
+  de Meta memoizado en `getMetaPanel` (`lib/ai-index.ts`). `ChatDataset` lleva
+  `pipelines` y `metaAds` para eso; el resumen del dataset anuncia la conexión y las
+  reglas 6-8 del prompt ya hablan de las etapas por palabra.
 - **Cada cuenta publicitaria ES un desarrollo** ("Cañadas by El Mirador ", "Átria "…):
   `accountToPipeline` casa el nombre de la cuenta con el pipeline (agujas largas primero)
   y manda en `assignAdDesarrollos`; la inferencia de la entrega ① (moda de los pipelines
@@ -744,6 +763,7 @@ bug class these modules were extracted to kill.
 | Module | Owns |
 |---|---|
 | `lib/pauta.ts` | what counts as "de pauta" + campaign-name resolution (below) |
+| `lib/sync-slim.ts` | **lo que NO viaja al navegador**: `relations`, `customFields` crudo, el `contact` embebido, cursores y duplicados de GHL, y las llaves de `attributions[]` que nadie lee. El payload pasó de 66.6 a 44.8 MB de JSON (4.8 MB gzip) el 2026-09-29 con clasificación idéntica. Antes de agregar una llave, grep en `lib/`, `components/`, `app/` y en la lista de campos de `lib/ai-tools.ts` |
 | `lib/opportunity-status.ts` | `isWonOpp()` — canonical "won" detection |
 | `lib/source-platform.ts` | "Origen de lead" platform bucketing + `PLATFORM_COLORS` / `PLATFORM_ORDER` |
 | `lib/csv.ts` | CSV cell escaping (`csvCell`, `buildCsv`) |

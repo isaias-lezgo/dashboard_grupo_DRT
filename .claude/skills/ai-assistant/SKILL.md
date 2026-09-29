@@ -29,6 +29,11 @@ The assistant is an **agent loop that runs in the browser**, not on the server.
   being a native field, never printing IDs). **Treat those numbered rules as regression
   fixes, not prose** — each one exists because the model got it wrong. Don't trim them
   for brevity.
+- **Meta Ads**: `resumen_pauta` runs `buildPautaInvestment` (the panel card's aggregation)
+  in the browser over `data.metaAds` + `data.pipelines`, with the Meta context memoized
+  by `getMetaPanel()` in `lib/ai-index.ts`. The system prompt tells the model to go
+  straight to it for gasto / CPL / CPM / rendimiento questions instead of the "Pauta(s)"
+  clarifying question; the dataset summary announces whether Meta is connected.
 - `lib/ai-index.ts` — `buildChatIndex()` precomputes the by-contact lookup maps
   (`oppsByContact`, `pautasByContact`, `pautaNameByContact`, …), cached on the contacts
   array reference so it survives within a single agent run.
