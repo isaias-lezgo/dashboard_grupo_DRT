@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { Filter, Info } from "lucide-react"
 import type {
   Appointment,
@@ -153,9 +153,13 @@ export function StageFunnelChart({
                     </span>
                     <span className="flex min-w-0 items-center gap-1 text-xs text-foreground">
                       <span className="truncate">{step.label}</span>
-                      {step.key === "citas" && citas?.fuentes && (
-                        <CitasInfo fuentes={citas.fuentes} />
-                      )}
+                      <StepInfo label={step.label}>
+                        {step.key === "citas" && citas?.fuentes ? (
+                          <CitasExplain fuentes={citas.fuentes} />
+                        ) : (
+                          STEP_EXPLAIN[step.key]
+                        )}
+                      </StepInfo>
                     </span>
                     <span className="h-5 w-full overflow-hidden rounded-sm bg-muted/60">
                       {step.count > 0 && (
@@ -209,11 +213,54 @@ export function StageFunnelChart({
 }
 
 /**
- * El ⓘ de "Citas agendadas": el único paso que mezcla dos fuentes, y el
- * desglose de cuánto aportó cada una. Va dentro del botón de la fila, así que
- * detiene el click para no abrir el drawer al tocarlo.
+ * Qué cuenta cada paso. Todos heredan de los posteriores (el embudo es
+ * monótono), así que cada texto lo recuerda: una venta cuenta en los seis.
  */
-function CitasInfo({ fuentes }: { fuentes: NonNullable<FunnelStep["fuentes"]> }) {
+const STEP_EXPLAIN: Record<FunnelStep["key"], ReactNode> = {
+  leads: (
+    <>
+      Todas las oportunidades del embudo creadas en el periodo, con o sin asesor y en
+      cualquier estatus (abiertas, perdidas y ganadas). Es la base de todos los porcentajes.
+    </>
+  ),
+  precalificados: (
+    <>
+      Oportunidades cuya etapa actual es <em>Seguimiento</em> o posterior, más las que ya
+      alcanzaron un paso de más adelante (una cita, una visita, una venta). Las que siguen en{" "}
+      <em>Recibido</em> o están en la etapa <em>Perdido</em> no cuentan.
+    </>
+  ),
+  citas: (
+    <>
+      Oportunidades en la etapa <em>Cita</em> o posterior, o cuyo contacto tiene una cita en
+      el calendario del CRM.
+    </>
+  ),
+  visitas: (
+    <>
+      Oportunidades cuya etapa actual es <em>Visita</em> o posterior, o que están ganadas.
+      Una perdida que ya había llegado a <em>Visita</em> sí cuenta.
+    </>
+  ),
+  apartados: (
+    <>
+      Oportunidades cuya etapa actual es <em>Apartado</em>, más las ventas cerradas. El
+      apartado es el primer compromiso real: casi todo el que aparta, compra.
+    </>
+  ),
+  ventas: (
+    <>
+      Oportunidades ganadas: marcadas como <em>ganada</em> en el CRM o paradas en la etapa{" "}
+      <em>Venta</em> sin estar perdidas. Una perdida en <em>Venta</em> no es venta cerrada.
+    </>
+  ),
+}
+
+/**
+ * El ⓘ de cada paso. Va dentro del botón de la fila, así que detiene el click
+ * para no abrir el drawer al tocarlo.
+ */
+function StepInfo({ label, children }: { label: string; children: ReactNode }) {
   return (
     <TooltipProvider delayDuration={100}>
       <Tooltip>
@@ -221,7 +268,7 @@ function CitasInfo({ fuentes }: { fuentes: NonNullable<FunnelStep["fuentes"]> })
           <span
             role="button"
             tabIndex={0}
-            aria-label="Cómo se cuenta una cita agendada"
+            aria-label={`Cómo se cuenta: ${label}`}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             className="inline-flex shrink-0 text-muted-foreground/70 hover:text-foreground"
@@ -230,15 +277,27 @@ function CitasInfo({ fuentes }: { fuentes: NonNullable<FunnelStep["fuentes"]> })
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-[18rem] text-xs leading-relaxed">
-          Una oportunidad cuenta como cita agendada si <strong>cualquiera</strong> de dos
-          señales se cumple: su etapa es <em>Cita</em> o posterior (
-          {fuentes.porEtapa.toLocaleString("es-MX")}), o su contacto tiene una cita en el objeto{" "}
-          <strong>Citas</strong> del CRM, con cualquier estatus, aunque la oportunidad siga en
-          una etapa anterior ({fuentes.soloPorCita.toLocaleString("es-MX")} solo por esta vía).
-          Se mezclan porque hay asesoras que agendan en el calendario sin mover la oportunidad
-          y otras que la mueven sin usar el calendario.
+          {children}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  )
+}
+
+/**
+ * "Citas agendadas" es el único paso que mezcla dos fuentes; su ⓘ desglosa
+ * cuánto aportó cada una.
+ */
+function CitasExplain({ fuentes }: { fuentes: NonNullable<FunnelStep["fuentes"]> }) {
+  return (
+    <>
+      Una oportunidad cuenta como cita agendada si <strong>cualquiera</strong> de dos
+      señales se cumple: su etapa es <em>Cita</em> o posterior (
+      {fuentes.porEtapa.toLocaleString("es-MX")}), o su contacto tiene una cita en el objeto{" "}
+      <strong>Citas</strong> del CRM, con cualquier estatus, aunque la oportunidad siga en
+      una etapa anterior ({fuentes.soloPorCita.toLocaleString("es-MX")} solo por esta vía).
+      Se mezclan porque hay asesoras que agendan en el calendario sin mover la oportunidad
+      y otras que la mueven sin usar el calendario.
+    </>
   )
 }
